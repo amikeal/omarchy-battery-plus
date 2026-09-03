@@ -59,10 +59,18 @@ is installed.
 ## Install / remove
 
 ```bash
+omarchy plugin add https://github.com/amikeal/omarchy-battery-plus.git --enable
+```
+
+Or by hand from a checkout in `~/.config/omarchy/plugins/mikeal.battery-plus/`:
+
+```bash
 omarchy-shell shell rescanPlugins
 omarchy plugin enable mikeal.battery-plus     # adds it to the bar (right section)
 omarchy plugin disable mikeal.battery-plus    # removes it; re-enable omarchy.power if wanted
 ```
+
+Then run `extras/power-tuning/apply.sh` once to unlock the tuning controls.
 
 Editing any file here hot-reloads bindings; structural QML changes need
 `omarchy restart shell`.
