@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
+import Quickshell.Services.UPower
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
@@ -20,13 +21,42 @@ Panel {
   readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
-  readonly property var b: service.battery
+  // Live battery state comes from UPower (event-driven) so the bar icon is
+  // always current — the polled JSON service only runs while the panel is
+  // open, which used to leave the icon reading 0% until first opened.
+  readonly property var dev: UPower.displayDevice
+  readonly property bool batPresent: !!(dev && dev.isPresent)
+  readonly property int batPct: batPresent ? Math.round(dev.percentage * 100) : 0
+  readonly property string batStatus: !batPresent ? "Unknown"
+    : dev.state === UPowerDeviceState.Charging ? "Charging"
+    : dev.state === UPowerDeviceState.Discharging ? "Discharging"
+    : dev.state === UPowerDeviceState.FullyCharged ? "Full"
+    : dev.state === UPowerDeviceState.PendingCharge ? "Not charging"
+    : "Unknown"
+  readonly property bool charging: batStatus === "Charging"
+
+  // Merge live UPower values with the polled extras (cycles, temp, health).
+  readonly property var b: ({
+    present: root.batPresent,
+    percent: root.batPct,
+    status: root.batStatus,
+    watts: root.batPresent ? Math.abs(Number(dev.changeRate) || 0) : 0,
+    minutes: root.batPresent
+      ? Math.round((root.charging ? (Number(dev.timeToFull) || 0) : (Number(dev.timeToEmpty) || 0)) / 60)
+      : 0,
+    fraction: root.batPresent ? Math.max(0, Math.min(1, dev.percentage)) : 0,
+    acOnline: UPower.onBattery ? 0 : 1,
+    health: Number(service.battery.health) || 0,
+    whFull: Number(service.battery.whFull) || 0,
+    whDesign: Number(service.battery.whDesign) || 0,
+    cycles: Number(service.battery.cycles) || 0,
+    tempC: service.battery.tempC || ""
+  })
   readonly property var cpu: service.cpu
   readonly property var tlp: service.tlp
   readonly property var tweaks: service.tweaks
 
   readonly property bool showPercentage: setting("showPercentage", true) === true
-  readonly property bool charging: b.status === "Charging"
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
@@ -385,55 +415,6 @@ Panel {
             }
           }
 
-          // ---------- Device power saving ----------
-          Column {
-            visible: root.tlp.installed
-            width: parent.width
-            spacing: Style.space(2)
-
-            PanelSeparator { foreground: root.fg }
-            PanelSectionHeader { text: "DEVICE POWER SAVING"; foreground: root.fg; fontFamily: root.fontFamily }
-
-            Toggle {
-              width: parent.width
-              label: "Wi-Fi power saving"
-              checked: root.tweaks.wifi
-              foreground: root.fg; fontFamily: root.fontFamily
-              onClicked: service.act("wifi", root.tweaks.wifi ? "off" : "on")
-            }
-            Toggle {
-              width: parent.width
-              label: "PCIe runtime power"
-              checked: root.tweaks.pcie
-              foreground: root.fg; fontFamily: root.fontFamily
-              onClicked: service.act("pcie", root.tweaks.pcie ? "off" : "on")
-            }
-            Toggle {
-              width: parent.width
-              label: "USB autosuspend"
-              description: "Keyboards & mice are always excluded"
-              checked: root.tweaks.usb
-              foreground: root.fg; fontFamily: root.fontFamily
-              onClicked: service.act("usb", root.tweaks.usb ? "off" : "on")
-            }
-            Toggle {
-              width: parent.width
-              label: "Audio codec power save"
-              checked: root.tweaks.audio
-              foreground: root.fg; fontFamily: root.fontFamily
-              onClicked: service.act("audio", root.tweaks.audio ? "off" : "on")
-            }
-            Text {
-              width: parent.width
-              topPadding: Style.space(6)
-              text: "Applied for this session. Edit the TLP config to make them permanent."
-              color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-              wrapMode: Text.WordWrap
-            }
-          }
-
           // ---------- Top consumers ----------
           Column {
             width: parent.width
@@ -523,6 +504,55 @@ Panel {
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               horizontalAlignment: Text.AlignHCenter
+            }
+          }
+
+          // ---------- Device power saving ----------
+          Column {
+            visible: root.tlp.installed
+            width: parent.width
+            spacing: Style.space(2)
+
+            PanelSeparator { foreground: root.fg }
+            PanelSectionHeader { text: "DEVICE POWER SAVING"; foreground: root.fg; fontFamily: root.fontFamily }
+
+            Toggle {
+              width: parent.width
+              label: "Wi-Fi power saving"
+              checked: root.tweaks.wifi
+              foreground: root.fg; fontFamily: root.fontFamily
+              onClicked: service.act("wifi", root.tweaks.wifi ? "off" : "on")
+            }
+            Toggle {
+              width: parent.width
+              label: "PCIe runtime power"
+              checked: root.tweaks.pcie
+              foreground: root.fg; fontFamily: root.fontFamily
+              onClicked: service.act("pcie", root.tweaks.pcie ? "off" : "on")
+            }
+            Toggle {
+              width: parent.width
+              label: "USB autosuspend"
+              description: "Keyboards & mice are always excluded"
+              checked: root.tweaks.usb
+              foreground: root.fg; fontFamily: root.fontFamily
+              onClicked: service.act("usb", root.tweaks.usb ? "off" : "on")
+            }
+            Toggle {
+              width: parent.width
+              label: "Audio codec power save"
+              checked: root.tweaks.audio
+              foreground: root.fg; fontFamily: root.fontFamily
+              onClicked: service.act("audio", root.tweaks.audio ? "off" : "on")
+            }
+            Text {
+              width: parent.width
+              topPadding: Style.space(6)
+              text: "Applied for this session. Edit the TLP config to make them permanent."
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
             }
           }
 

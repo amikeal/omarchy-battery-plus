@@ -98,12 +98,19 @@ load1=$(cut -d' ' -f1 /proc/loadavg)
 tlp_installed=false; tlp_active=false; tlp_mode=unknown; tlp_manual=false
 command -v tlp >/dev/null 2>&1 && tlp_installed=true
 systemctl is-active --quiet tlp 2>/dev/null && tlp_active=true
+# power source: the AC adapter is the ground truth; /run/tlp/last_pwr holds
+# "<0|1> <changed>" (0 = AC, 1 = battery) and agrees with it.
 if [ -r /run/tlp/last_pwr ]; then
-  [ "$(cat /run/tlp/last_pwr)" = 1 ] && tlp_mode=battery || tlp_mode=ac
+  read -r lp _ < /run/tlp/last_pwr
+  [ "$lp" = 1 ] && tlp_mode=battery || tlp_mode=ac
+elif [ "${ac:-0}" = 1 ]; then
+  tlp_mode=ac
+else
+  tlp_mode=battery
 fi
 if [ -s /run/tlp/manual_mode ]; then
-  m=$(cat /run/tlp/manual_mode)
-  case $m in 0|bat|BAT) tlp_manual=true; tlp_mode=battery ;; 1|ac|AC) tlp_manual=true; tlp_mode=ac ;; esac
+  read -r mm _ < /run/tlp/manual_mode
+  case $mm in 0|bat|BAT) tlp_manual=true; tlp_mode=battery ;; 1|ac|AC) tlp_manual=true; tlp_mode=ac ;; esac
 fi
 
 # ---------- tunables (current runtime state) ----------------------

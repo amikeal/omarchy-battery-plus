@@ -79,9 +79,11 @@ Item {
     stdout: StdioCollector { waitForEnd: true; onStreamFinished: root._ingest(text) }
   }
 
+  // Poll fast while the panel is open; keep a slow background poll otherwise
+  // so opening the panel shows fresh data (and the sparkline stays populated).
   Timer {
-    interval: root.pollInterval
-    running: root.live
+    interval: root.live ? root.pollInterval : 60000
+    running: true
     repeat: true
     triggeredOnStart: true
     onTriggered: root.refresh()
