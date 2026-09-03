@@ -109,8 +109,13 @@ else
   tlp_mode=battery
 fi
 if [ -s /run/tlp/manual_mode ]; then
+  # TLP profile code: 0 = performance (tlp ac), 1 = balanced, 2 = power-saver
+  # (tlp bat). Empty/absent = automatic.
   read -r mm _ < /run/tlp/manual_mode
-  case $mm in 0|bat|BAT) tlp_manual=true; tlp_mode=battery ;; 1|ac|AC) tlp_manual=true; tlp_mode=ac ;; esac
+  case $mm in
+    0)     tlp_manual=true; tlp_mode=ac ;;
+    1|2)   tlp_manual=true; tlp_mode=battery ;;
+  esac
 fi
 
 # ---------- tunables (current runtime state) ----------------------
