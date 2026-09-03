@@ -7,13 +7,15 @@
 #   battery-plus-action turbo on|off
 #   battery-plus-action epp   power|balance_power|balance_performance|performance
 #   battery-plus-action wifi|usb|pcie|audio  on|off
+#   battery-plus-action persist   wifi|usb|pcie|audio  on|off   (write to TLP config)
+#   battery-plus-action unpersist wifi|usb|pcie|audio          (back to defaults)
 #   battery-plus-action scan | dashboard | install       (opens a terminal)
 set -uo pipefail
 export LC_ALL=C
 PATH=/usr/local/bin:/usr/bin:/bin
 DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-verb=${1:-}; arg=${2:-}
+verb=${1:-}; arg=${2:-}; arg2=${3:-}
 
 priv() {
   if sudo -n /usr/local/bin/battery-plus-priv "$@" >/dev/null 2>&1; then return 0; fi
@@ -38,6 +40,10 @@ case "$verb" in
     esac ;;
   turbo|epp|wifi|usb|pcie|audio)
     priv "$verb" "$arg" ;;
+  persist)
+    priv persist "$arg" "$arg2" ;;
+  unpersist)
+    priv unpersist "$arg" ;;
   scan)
     term "sudo powertop --time=20"; exit 0 ;;
   dashboard)

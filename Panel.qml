@@ -511,44 +511,39 @@ Panel {
           Column {
             visible: root.tlp.installed
             width: parent.width
-            spacing: Style.space(2)
+            spacing: Style.space(10)
 
             PanelSeparator { foreground: root.fg }
             PanelSectionHeader { text: "DEVICE POWER SAVING"; foreground: root.fg; fontFamily: root.fontFamily }
 
-            Toggle {
-              width: parent.width
-              label: "Wi-Fi power saving"
-              checked: root.tweaks.wifi
-              foreground: root.fg; fontFamily: root.fontFamily
-              onClicked: service.act("wifi", root.tweaks.wifi ? "off" : "on")
+            Repeater {
+              model: Model.TWEAK_INFO
+
+              TweakRow {
+                required property var modelData
+                width: parent.width
+                tweakKey: modelData.key
+                title: modelData.title
+                blurb: modelData.blurb
+                help: modelData.help
+                on: root.tweaks[modelData.key] === true
+                pinned: root.tweaks[modelData.key + "Pinned"] === true
+
+                onSetOn: function(next) {
+                  if (pinned) service.act("persist", tweakKey, next ? "on" : "off")
+                  else service.act(tweakKey, next ? "on" : "off")
+                }
+                onSetPinned: function(next) {
+                  if (next) service.act("persist", tweakKey, on ? "on" : "off")
+                  else service.act("unpersist", tweakKey)
+                }
+              }
             }
-            Toggle {
-              width: parent.width
-              label: "PCIe runtime power"
-              checked: root.tweaks.pcie
-              foreground: root.fg; fontFamily: root.fontFamily
-              onClicked: service.act("pcie", root.tweaks.pcie ? "off" : "on")
-            }
-            Toggle {
-              width: parent.width
-              label: "USB autosuspend"
-              description: "Keyboards & mice are always excluded"
-              checked: root.tweaks.usb
-              foreground: root.fg; fontFamily: root.fontFamily
-              onClicked: service.act("usb", root.tweaks.usb ? "off" : "on")
-            }
-            Toggle {
-              width: parent.width
-              label: "Audio codec power save"
-              checked: root.tweaks.audio
-              foreground: root.fg; fontFamily: root.fontFamily
-              onClicked: service.act("audio", root.tweaks.audio ? "off" : "on")
-            }
+
             Text {
               width: parent.width
-              topPadding: Style.space(6)
-              text: "Applied for this session. Edit the TLP config to make them permanent."
+              text: "Toggles apply immediately. “Keep after reboot” writes the setting into "
+                  + "the TLP config so it survives a restart."
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -655,6 +650,123 @@ Panel {
         bordered: true
         active: seg.value === String(modelData.value)
         onClicked: seg.picked(String(modelData.value))
+      }
+    }
+  }
+
+  // A device-power-saving row: label + one-line blurb, an (i) that expands
+  // the full explanation and a "keep after reboot" control, and the switch.
+  component TweakRow: Column {
+    id: tw
+
+    property string tweakKey: ""
+    property string title: ""
+    property string blurb: ""
+    property string help: ""
+    property bool on: false
+    property bool pinned: false
+    property bool expanded: false
+
+    signal setOn(bool next)
+    signal setPinned(bool next)
+
+    width: parent ? parent.width : implicitWidth
+    spacing: Style.space(4)
+
+    Item {
+      width: parent.width
+      implicitHeight: Math.max(twSwitch.implicitHeight, twText.implicitHeight, Style.space(28))
+
+      Column {
+        id: twText
+        anchors.left: parent.left
+        anchors.right: twCtl.left
+        anchors.rightMargin: Style.space(8)
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: Style.space(1)
+
+        Text {
+          width: parent.width
+          text: tw.title
+          color: root.fg
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.subtitle
+          font.bold: true
+          elide: Text.ElideRight
+        }
+        Text {
+          width: parent.width
+          text: tw.blurb
+          visible: text !== ""
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          wrapMode: Text.WordWrap
+        }
+      }
+
+      Row {
+        id: twCtl
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: Style.space(6)
+
+        PanelActionButton {
+          iconText: tw.expanded ? "\uf056" : "\uf05a"
+          tooltipText: tw.expanded ? "Hide details" : "What does this do?"
+          foreground: tw.expanded ? Color.accent : root.dim
+          hoverColor: root.fg
+          fontFamily: root.fontFamily
+          anchors.verticalCenter: parent.verticalCenter
+          onClicked: tw.expanded = !tw.expanded
+        }
+        ToggleSwitch {
+          id: twSwitch
+          checked: tw.on
+          foreground: root.fg
+          accent: Color.accent
+          anchors.verticalCenter: parent.verticalCenter
+          onToggled: tw.setOn(!tw.on)
+        }
+      }
+
+      MouseArea {
+        anchors.left: parent.left
+        anchors.right: twCtl.left
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        cursorShape: Qt.PointingHandCursor
+        onClicked: tw.setOn(!tw.on)
+      }
+    }
+
+    Column {
+      visible: tw.expanded
+      width: parent.width
+      leftPadding: Style.space(2)
+      bottomPadding: Style.space(2)
+      spacing: Style.space(6)
+
+      Text {
+        width: parent.width - parent.leftPadding
+        text: tw.help
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
+        lineHeight: 1.15
+      }
+
+      Button {
+        text: tw.pinned ? "\uf00c  Kept after reboot" : "Keep after reboot"
+        fontSize: Style.font.caption
+        bordered: true
+        active: tw.pinned
+        foreground: root.fg
+        fontFamily: root.fontFamily
+        horizontalPadding: Style.spacing.sm
+        verticalPadding: Style.space(3)
+        onClicked: tw.setPinned(!tw.pinned)
       }
     }
   }

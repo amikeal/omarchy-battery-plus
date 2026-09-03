@@ -20,8 +20,10 @@ leaving the bar.
 - **CPU** — turbo-boost toggle and an energy-preference (EPP) selector.
 - **Top consumers** — the busiest process groups, with bars.
 - **Device power saving** — Wi-Fi powersave, PCIe runtime PM, USB autosuspend
-  (HID devices excluded), and audio-codec powersave. Toggles take effect for
-  the running session; the TLP config makes them permanent.
+  (HID devices excluded), and audio-codec powersave. Each row has an **(i)**
+  that explains what the setting does and its tradeoffs before you turn it on.
+  Toggles take effect immediately; **Keep after reboot** writes the setting to a
+  plugin-owned drop-in (`/etc/tlp.d/02-battery-plus.conf`) so it persists.
 - **PowerTOP scan** and **Full dashboard** buttons open a floating terminal.
 
 Right-click the bar icon toggles the inline percentage.
@@ -80,9 +82,17 @@ The Power-mode, CPU, and device toggles need root. The installer copies
 `bin/battery-plus-priv` to **`/usr/local/bin/battery-plus-priv`** (owned by
 root) and whitelists exactly that path in `/etc/sudoers.d/battery-plus`, so
 the panel invokes it through `sudo -n` with no prompt. Every branch of that
-helper is a fixed operation on a fixed sysfs path — no argument is executed or
-used to build a path. Without the helper the panel falls back to a `pkexec`
-prompt per action.
+helper is a fixed operation on a fixed sysfs path or a whitelisted TLP key —
+no argument is executed or used to build a path. Without the helper the panel
+falls back to a `pkexec` prompt per action.
+
+After editing `bin/battery-plus-priv`, redeploy it:
+
+```bash
+sudo install -Dm755 -o root -g root \
+  ~/.config/omarchy/plugins/mikeal.battery-plus/bin/battery-plus-priv \
+  /usr/local/bin/battery-plus-priv
+```
 
 ## Settings
 

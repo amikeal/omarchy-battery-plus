@@ -59,9 +59,11 @@ Item {
     pollProc.running = true
   }
 
-  function act(verb, arg) {
+  function act(verb, arg, arg2) {
     if (actionProc.running) return
-    actionProc.command = [root.binDir + "/battery-plus-action", String(verb), String(arg || "")]
+    actionProc.command = [root.binDir + "/battery-plus-action",
+                          String(verb), String(arg === undefined ? "" : arg),
+                          String(arg2 === undefined ? "" : arg2)]
     actionProc.running = true
   }
 

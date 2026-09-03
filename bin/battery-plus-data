@@ -129,6 +129,16 @@ usb_as=false; [ "$usb_all" -gt 0 ] && [ "$usb_auto" -gt $(( usb_all / 2 )) ] && 
 audio_ps=false
 [ "$(cat /sys/module/snd_hda_intel/parameters/power_save 2>/dev/null || echo 0)" -gt 0 ] && audio_ps=true
 
+# which tweaks are pinned in the plugin-owned TLP drop-in (survive reboot)
+pin_wifi=false; pin_pcie=false; pin_usb=false; pin_audio=false
+PERSIST=/etc/tlp.d/02-battery-plus.conf
+if [ -r "$PERSIST" ]; then
+  grep -qE '^WIFI_PWR_ON_BAT='         "$PERSIST" && pin_wifi=true
+  grep -qE '^RUNTIME_PM_ON_BAT='       "$PERSIST" && pin_pcie=true
+  grep -qE '^USB_AUTOSUSPEND='         "$PERSIST" && pin_usb=true
+  grep -qE '^SOUND_POWER_SAVE_ON_BAT=' "$PERSIST" && pin_audio=true
+fi
+
 # ---------- top consumers (CPU% as a power proxy; helpers folded) -----
 top_json=$(ps -eo comm,pcpu --no-headers 2>/dev/null \
   | awk '$1!~/^(ps|awk|sort|head|jq)$/ {a[$1]+=$2}
@@ -147,6 +157,7 @@ jq -cn \
   --arg pkgtemp "${pkgtemp:-}" --argjson load1 "${load1:-0}" \
   --argjson tlpInstalled "$tlp_installed" --argjson tlpActive "$tlp_active" --arg tlpMode "$tlp_mode" --argjson tlpManual "$tlp_manual" \
   --argjson wifi "$wifi_ps" --argjson usb "$usb_as" --argjson pcie "$pcie_pm" --argjson audio "$audio_ps" \
+  --argjson pinWifi "$pin_wifi" --argjson pinUsb "$pin_usb" --argjson pinPcie "$pin_pcie" --argjson pinAudio "$pin_audio" \
   --argjson top "$top_json" \
   '{
     battery: { present:$present, percent:$percent, status:$status, watts:$watts, health:$health,
@@ -155,6 +166,7 @@ jq -cn \
     rapl:   { available:$raplAvail, package:$rpkg, core:$rcore, gpu:$rgpu },
     cpu:    { governor:$gov, epp:$epp, turbo:$turbo, freqMHz:$freq, pkgTempC:$pkgtemp, load1:$load1 },
     tlp:    { installed:$tlpInstalled, active:$tlpActive, mode:$tlpMode, manual:$tlpManual },
-    tweaks: { wifi:$wifi, usb:$usb, pcie:$pcie, audio:$audio },
+    tweaks: { wifi:$wifi, usb:$usb, pcie:$pcie, audio:$audio,
+              wifiPinned:$pinWifi, usbPinned:$pinUsb, pciePinned:$pinPcie, audioPinned:$pinAudio },
     top:    $top
   }'
