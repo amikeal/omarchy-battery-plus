@@ -1,76 +1,116 @@
 # Battery+
 
-A richer replacement for the built-in `omarchy.power` bar widget, built for
-this T2 MacBook Air. Left-click opens a panel anchored under the icon (like
-the Wi-Fi / display panels) with:
+A richer replacement for Omarchy's built-in `omarchy.power` bar widget.
+Left-click opens a panel anchored under the icon (like the Wi-Fi and display
+panels) that shows battery health and live power data, and — once a power
+manager is installed — lets you tune CPU and per-device power saving without
+leaving the bar.
+
+![screenshot](docs/panel.png)
+
+## Panel contents
 
 - **Hero** — battery glyph, charge %, and live mode (`ON BATTERY · 9.6 W`).
-- **Charge bar** — animated, pulses while charging.
-- **Stats** — time left, draw, health, cycles, capacity (Wh), temperature.
-- **Power draw** — a rolling sparkline of the last ~60 samples (Intel RAPL
-  package power when readable, otherwise the battery's own draw).
-- **Power mode** — `Auto` / `Saver` / `Full power` segmented control
-  (drives `tlp start` / `tlp bat` / `tlp ac`).
-- **CPU** — turbo-boost toggle + energy-preference segmented control (EPP).
-- **Device power saving** — Wi-Fi powersave, PCIe runtime PM, USB
-  autosuspend (HID excluded), audio codec powersave. Applied for the
-  session; make them permanent in the TLP config.
-- **Top consumers** — the six busiest process groups with mini bars.
-- **PowerTOP scan** / **Full dashboard** buttons open a floating terminal.
+- **Charge bar** — animated; pulses while charging.
+- **Stats** — time remaining, draw, health, cycle count, capacity (Wh), temperature.
+- **Power draw** — a rolling sparkline of recent samples: Intel RAPL package
+  power when it's readable, otherwise the battery's own reported draw.
+- **Power mode** — `Auto` / `Saver` / `Full power`, backed by TLP
+  (`tlp start` / `tlp bat` / `tlp ac`).
+- **CPU** — turbo-boost toggle and an energy-preference (EPP) selector.
+- **Top consumers** — the busiest process groups, with bars.
+- **Device power saving** — Wi-Fi powersave, PCIe runtime PM, USB autosuspend
+  (HID devices excluded), and audio-codec powersave. Toggles take effect for
+  the running session; the TLP config makes them permanent.
+- **PowerTOP scan** and **Full dashboard** buttons open a floating terminal.
 
-Right-click the icon toggles the inline percentage.
+Right-click the bar icon toggles the inline percentage.
 
-## Files
+The battery icon, tooltip, and hero read live state from
+`Quickshell.Services.UPower`, so they are always current. The heavier
+data (RAPL, CPU, process list, tunable state) is gathered by a small shell
+helper that polls while the panel is open plus a slow background tick.
 
-```
-manifest.json               plugin manifest (bar-widget, id mikeal.battery-plus)
-Panel.qml                   bar button + anchored panel UI
-PowerService.qml            runs bin/ helpers, exposes their JSON as reactive state
-Model.js                    pure formatting/derivation helpers
-bin/battery-plus-data       emits one JSON blob (fast, no privileges)
-bin/battery-plus-action     performs an action, then re-emits data
-bin/battery-plus-priv       the only privileged entry point (see below)
-extras/power-tuning/        TLP install/revert + drop-in config for this MacBook
-extras/battery-dashboard    gum TUI opened by the panel's "Full dashboard" button
-extras/battery-common.sh    shared battery probe for the TUI
-```
+## Requirements
 
-`extras/` is a working copy; `~/.config/omarchy/power-tuning/` and
-`~/.config/omarchy/bar/scripts/` hold the live copies this machine uses.
+- Omarchy (the Quickshell-based shell) with a laptop battery.
+- `jq` (ships with Omarchy).
+- Optional, for the tuning half: **TLP** and **powertop**. The bundled
+  installer in `extras/power-tuning/` sets these up. Until a power manager is
+  present the panel is a read-only monitor and the tuning sections are hidden.
 
-## Privileges
-
-The power-mode, CPU, and device toggles need root. `../power-tuning/apply.sh`
-installs `bin/battery-plus-priv` to **`/usr/local/bin/battery-plus-priv`**
-(root-owned) and whitelists exactly that path in `/etc/sudoers.d/battery-plus`,
-so the panel runs it through `sudo -n` with no prompt. Every branch of that
-helper is a fixed operation on a fixed sysfs path — no caller string is ever
-executed or used to build a path. Without it the panel falls back to a
-`pkexec` prompt per action, and the whole tuning section is hidden until TLP
-is installed.
-
-## Settings (`shell.json` inline)
-
-| key              | default | meaning                                   |
-|------------------|---------|-------------------------------------------|
-| `showPercentage` | `true`  | show `%` next to the bar icon             |
-| `pollIntervalSec`| `5`     | refresh cadence while the panel is open   |
-
-## Install / remove
+## Install
 
 ```bash
 omarchy plugin add https://github.com/amikeal/omarchy-battery-plus.git --enable
 ```
 
-Or by hand from a checkout in `~/.config/omarchy/plugins/mikeal.battery-plus/`:
+Enabling adds the widget to the right side of the bar. If you'd rather keep
+the stock widget too, move or remove one with `omarchy bar`.
+
+By hand instead: clone into `~/.config/omarchy/plugins/mikeal.battery-plus/`,
+then `omarchy-shell shell rescanPlugins` and `omarchy plugin enable mikeal.battery-plus`.
+
+Remove with `omarchy plugin remove mikeal.battery-plus` (re-enable
+`omarchy.power` afterwards if you want the stock widget back).
+
+## Power tuning (optional)
 
 ```bash
-omarchy-shell shell rescanPlugins
-omarchy plugin enable mikeal.battery-plus     # adds it to the bar (right section)
-omarchy plugin disable mikeal.battery-plus    # removes it; re-enable omarchy.power if wanted
+~/.config/omarchy/plugins/mikeal.battery-plus/extras/power-tuning/apply.sh
 ```
 
-Then run `extras/power-tuning/apply.sh` once to unlock the tuning controls.
+This installs `tlp` + `powertop`, masks `power-profiles-daemon`, writes a TLP
+drop-in, installs the privileged helper (below), and adds a udev rule so the
+panel can read Intel RAPL counters without root. `extras/power-tuning/revert.sh`
+undoes it.
 
-Editing any file here hot-reloads bindings; structural QML changes need
+> **The TLP drop-in (`tlp-macbookair.conf`) is tuned for the Intel
+> MacBook Air (9,1 / T2)** — Wi-Fi powersave on battery, PCIe ASPM, no CPU
+> turbo on battery, the Apple NVMe kept out of runtime PM, and so on. On other
+> hardware, review it before applying or drop in your own `/etc/tlp.d/` file;
+> the plugin only cares that TLP is running, not what's in the config.
+
+Masking `power-profiles-daemon` disables the profile buttons in the stock
+`omarchy.power` widget — Battery+'s Power-mode control replaces them.
+
+## Privileges
+
+The Power-mode, CPU, and device toggles need root. The installer copies
+`bin/battery-plus-priv` to **`/usr/local/bin/battery-plus-priv`** (owned by
+root) and whitelists exactly that path in `/etc/sudoers.d/battery-plus`, so
+the panel invokes it through `sudo -n` with no prompt. Every branch of that
+helper is a fixed operation on a fixed sysfs path — no argument is executed or
+used to build a path. Without the helper the panel falls back to a `pkexec`
+prompt per action.
+
+## Settings
+
+Set inline on the widget's entry in `~/.config/omarchy/shell.json`:
+
+| key               | default | meaning                                     |
+|-------------------|---------|---------------------------------------------|
+| `showPercentage`  | `true`  | show `%` next to the bar icon               |
+| `pollIntervalSec` | `5`     | refresh cadence while the panel is open     |
+
+## Layout
+
+```
+manifest.json               plugin manifest (bar-widget, id mikeal.battery-plus)
+Panel.qml                   bar button + anchored panel UI
+PowerService.qml            runs the bin/ helpers, exposes their JSON as state
+Model.js                    formatting / derivation helpers
+bin/battery-plus-data       prints one JSON blob (fast, unprivileged)
+bin/battery-plus-action     performs one change, then re-prints the data
+bin/battery-plus-priv       the single privileged entry point
+extras/power-tuning/        TLP installer / revert / drop-in config
+extras/battery-dashboard    the gum TUI behind the "Full dashboard" button
+extras/battery-common.sh    shared battery probe for the TUI
+```
+
+Editing a file hot-reloads bindings; structural QML changes need
 `omarchy restart shell`.
+
+## License
+
+MIT
