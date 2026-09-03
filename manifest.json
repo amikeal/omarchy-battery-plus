@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "id": "mikeal.battery-plus",
+  "name": "Battery+",
+  "version": "1.0.0",
+  "author": "mikeal",
+  "license": "MIT",
+  "description": "Battery health, live power draw, top consumers, and TLP / CPU power tuning from the bar.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Battery+",
+    "description": "Battery health, live power draw, top consumers, and one-tap power tuning.",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "showPercentage": true,
+      "pollIntervalSec": 5
+    },
+    "schema": [
+      {
+        "key": "showPercentage",
+        "type": "boolean",
+        "label": "Show percentage next to the icon",
+        "defaultValue": true
+      },
+      {
+        "key": "pollIntervalSec",
+        "type": "integer",
+        "label": "Refresh interval while the panel is open (seconds)",
+        "min": 2,
+        "max": 60,
+        "step": 1,
+        "defaultValue": 5
+      }
+    ]
+  }
+}

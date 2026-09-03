@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Battery+ — action dispatcher called by the panel. Performs the requested
+# change (elevating through the whitelisted /usr/local/bin/battery-plus-priv),
+# then prints a fresh data blob so the panel can refresh in one round trip.
+#
+#   battery-plus-action mode  auto|saver|full
+#   battery-plus-action turbo on|off
+#   battery-plus-action epp   power|balance_power|balance_performance|performance
+#   battery-plus-action wifi|usb|pcie|audio  on|off
+#   battery-plus-action scan | dashboard | install       (opens a terminal)
+set -uo pipefail
+export LC_ALL=C
+PATH=/usr/local/bin:/usr/bin:/bin
+DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+verb=${1:-}; arg=${2:-}
+
+priv() {
+  if sudo -n /usr/local/bin/battery-plus-priv "$@" >/dev/null 2>&1; then return 0; fi
+  if command -v pkexec >/dev/null 2>&1; then pkexec /usr/local/bin/battery-plus-priv "$@" >/dev/null 2>&1; return $?; fi
+  return 1
+}
+
+REPO=$(cd "$DIR/.." && pwd)
+term() { setsid omarchy-launch-floating-terminal-with-presentation "$@" >/dev/null 2>&1 & }
+
+# prefer the copy bundled in this repo, fall back to the user's config tree
+pick() { for p in "$@"; do [ -e "$p" ] && { echo "$p"; return; }; done; echo "$1"; }
+DASH=$(pick "$REPO/extras/battery-dashboard" "$HOME/.config/omarchy/bar/scripts/battery-dashboard")
+APPLY=$(pick "$REPO/extras/power-tuning/apply.sh" "$HOME/.config/omarchy/power-tuning/apply.sh")
+
+case "$verb" in
+  mode)
+    case "$arg" in
+      auto)  priv tlp-auto ;;
+      saver) priv tlp-bat ;;
+      full)  priv tlp-ac ;;
+    esac ;;
+  turbo|epp|wifi|usb|pcie|audio)
+    priv "$verb" "$arg" ;;
+  scan)
+    term "sudo powertop --time=20"; exit 0 ;;
+  dashboard)
+    term "$DASH"; exit 0 ;;
+  install)
+    term "bash $APPLY"; exit 0 ;;
+esac
+
+exec "$DIR/battery-plus-data"

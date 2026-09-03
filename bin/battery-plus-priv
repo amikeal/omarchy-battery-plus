@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Battery+ — privileged actions. power-tuning/apply.sh installs a copy of
+# this file to /usr/local/bin/battery-plus-priv (root:root, 0755) and
+# whitelists THAT path in /etc/sudoers.d/battery-plus. Every branch is a
+# fixed operation on a fixed sysfs path; no caller-supplied string is ever
+# executed or used to build a path.
+set -euo pipefail
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+want() { case "$1" in on|off) return 0 ;; *) echo "bad arg" >&2; exit 2 ;; esac; }
+
+case "${1:-}" in
+  tlp-auto) exec tlp start ;;
+  tlp-bat)  exec tlp bat ;;
+  tlp-ac)   exec tlp ac ;;
+
+  turbo)
+    want "${2:-}"
+    [ "$2" = on ] && v=0 || v=1
+    echo "$v" > /sys/devices/system/cpu/intel_pstate/no_turbo
+    ;;
+
+  epp)
+    case "${2:-}" in
+      power|balance_power|balance_performance|performance) ;;
+      *) echo "bad epp" >&2; exit 2 ;;
+    esac
+    for f in /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference; do
+      echo "$2" > "$f" 2>/dev/null || true
+    done
+    ;;
+
+  wifi)
+    want "${2:-}"
+    for d in /sys/class/net/wl*; do
+      [ -e "$d" ] || continue
+      iw dev "$(basename "$d")" set power_save "$2" || true
+    done
+    ;;
+
+  audio)
+    want "${2:-}"
+    [ "$2" = on ] && echo 10 > /sys/module/snd_hda_intel/parameters/power_save \
+                  || echo 0  > /sys/module/snd_hda_intel/parameters/power_save
+    ;;
+
+  pcie)
+    want "${2:-}"
+    [ "$2" = on ] && v=auto || v=on
+    for f in /sys/bus/pci/devices/*/power/control; do echo "$v" > "$f" 2>/dev/null || true; done
+    ;;
+
+  usb)
+    want "${2:-}"
+    [ "$2" = on ] && v=auto || v=on
+    for f in /sys/bus/usb/devices/*/power/control; do
+      dev=$(dirname "$f")
+      # never autosuspend HID (keyboards, mice, trackpads, fingerprint readers)
+      if grep -qsx 03 "$dev"/*/bInterfaceClass 2>/dev/null; then continue; fi
+      echo "$v" > "$f" 2>/dev/null || true
+    done
+    ;;
+
+  *) echo "unknown action: ${1:-}" >&2; exit 2 ;;
+esac
+
+echo ok
