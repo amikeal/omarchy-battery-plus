@@ -3,7 +3,7 @@
   "id": "io.github.amikeal.battery-plus",
   "name": "Battery+",
   "version": "1.0.0",
-  "author": "mikeal",
+  "author": "amikeal",
   "license": "MIT",
   "description": "Battery health, live power draw, top consumers, and TLP / CPU power tuning from the bar.",
   "kinds": [
