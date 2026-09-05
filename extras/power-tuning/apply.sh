@@ -8,7 +8,7 @@ CONF=/etc/tlp.d/01-omarchy-macbookair.conf
 
 [ "$(id -u)" -ne 0 ] || { echo "Run as your normal user, not root — it calls sudo itself."; exit 1; }
 
-PLUGIN=$HOME/.config/omarchy/plugins/mikeal.battery-plus
+PLUGIN=$(cd "$HERE/../.." && pwd)
 
 cat <<EOF
 This will:

@@ -11,7 +11,7 @@ import "Model.js" as Model
 Panel {
   id: root
 
-  moduleName: "mikeal.battery-plus"
+  moduleName: "io.github.amikeal.battery-plus"
   ipcTarget: moduleName
   manageIpc: false
 

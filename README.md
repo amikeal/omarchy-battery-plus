@@ -6,7 +6,7 @@ panels) that shows battery health and live power data, and — once a power
 manager is installed — lets you tune CPU and per-device power saving without
 leaving the bar.
 
-![screenshot](docs/panel.png)
+![screenshot](preview.png)
 
 ## Panel contents
 
@@ -50,16 +50,16 @@ omarchy plugin add https://github.com/amikeal/omarchy-battery-plus.git --enable
 Enabling adds the widget to the right side of the bar. If you'd rather keep
 the stock widget too, move or remove one with `omarchy bar`.
 
-By hand instead: clone into `~/.config/omarchy/plugins/mikeal.battery-plus/`,
-then `omarchy-shell shell rescanPlugins` and `omarchy plugin enable mikeal.battery-plus`.
+By hand instead: clone into `~/.config/omarchy/plugins/io.github.amikeal.battery-plus/`,
+then `omarchy-shell shell rescanPlugins` and `omarchy plugin enable io.github.amikeal.battery-plus`.
 
-Remove with `omarchy plugin remove mikeal.battery-plus` (re-enable
+Remove with `omarchy plugin remove io.github.amikeal.battery-plus` (re-enable
 `omarchy.power` afterwards if you want the stock widget back).
 
 ## Power tuning (optional)
 
 ```bash
-~/.config/omarchy/plugins/mikeal.battery-plus/extras/power-tuning/apply.sh
+~/.config/omarchy/plugins/io.github.amikeal.battery-plus/extras/power-tuning/apply.sh
 ```
 
 This installs `tlp` + `powertop`, masks `power-profiles-daemon`, writes a TLP
@@ -90,7 +90,7 @@ After editing `bin/battery-plus-priv`, redeploy it:
 
 ```bash
 sudo install -Dm755 -o root -g root \
-  ~/.config/omarchy/plugins/mikeal.battery-plus/bin/battery-plus-priv \
+  ~/.config/omarchy/plugins/io.github.amikeal.battery-plus/bin/battery-plus-priv \
   /usr/local/bin/battery-plus-priv
 ```
 
@@ -106,7 +106,7 @@ Set inline on the widget's entry in `~/.config/omarchy/shell.json`:
 ## Layout
 
 ```
-manifest.json               plugin manifest (bar-widget, id mikeal.battery-plus)
+manifest.json               plugin manifest (bar-widget, id io.github.amikeal.battery-plus)
 Panel.qml                   bar button + anchored panel UI
 PowerService.qml            runs the bin/ helpers, exposes their JSON as state
 Model.js                    formatting / derivation helpers
