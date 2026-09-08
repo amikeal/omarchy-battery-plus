@@ -17,7 +17,9 @@ This will:
   • write     $CONF
   • enable    tlp.service  and apply it now
   • install   /usr/local/bin/battery-plus-priv   (root-owned tuning helper)
-  • add       /etc/sudoers.d/battery-plus   (passwordless: tlp, tlp-stat, powertop, battery-plus-priv)
+  • add       /etc/sudoers.d/battery-plus   (passwordless: battery-plus-priv ONLY —
+                its own allowlist covers every action the panel performs; running
+                tlp/tlp-stat/powertop by hand still prompts for your password)
   • add       /etc/udev/rules.d/99-rapl-readable.rules  (RAPL stats without root)
   • restart   the Omarchy shell
 
@@ -51,14 +53,22 @@ else
   echo "    (plugin not found at $PLUGIN — skipping; tuning toggles will use pkexec prompts)"
 fi
 
-echo "==> passwordless helpers"
-tlp_bin=$(command -v tlp); stat_bin=$(command -v tlp-stat); pt_bin=$(command -v powertop)
-{
-  printf '%s ALL=(root) NOPASSWD: %s, %s, %s\n' "$USER" "$tlp_bin" "$stat_bin" "$pt_bin"
-  [ -f /usr/local/bin/battery-plus-priv ] && \
-    printf '%s ALL=(root) NOPASSWD: /usr/local/bin/battery-plus-priv\n' "$USER"
-} | sudo install -Dm440 /dev/stdin /etc/sudoers.d/battery-plus
-sudo visudo -cf /etc/sudoers.d/battery-plus
+echo "==> passwordless helper"
+# NOPASSWD is scoped to battery-plus-priv ONLY. That helper validates a fixed
+# verb/value allowlist against fixed sysfs paths and TLP keys (see its header
+# comment) — no caller-supplied string is ever executed or used to build a
+# path. Granting the same to the bare tlp/tlp-stat/powertop binaries would be
+# broader than any panel action needs and would sit as permanent, unrestricted
+# root access; run those by hand with `sudo` (a password prompt) instead —
+# the "PowerTOP scan" and "Full dashboard" buttons already open an interactive
+# terminal for exactly that.
+if [ -f /usr/local/bin/battery-plus-priv ]; then
+  printf '%s ALL=(root) NOPASSWD: /usr/local/bin/battery-plus-priv\n' "$USER" \
+    | sudo install -Dm440 /dev/stdin /etc/sudoers.d/battery-plus
+  sudo visudo -cf /etc/sudoers.d/battery-plus
+else
+  echo "    (battery-plus-priv not installed — skipping; tuning toggles will use pkexec prompts)"
+fi
 
 echo "==> RAPL readable by group wheel"
 printf '%s\n' \
@@ -78,6 +88,8 @@ cat <<EOF
 
 Done.
   • Verify tunables:   sudo tlp-stat -s   /   tlp-stat -b   /   tlp-stat -p
+                       (these will prompt for your password — only
+                       battery-plus-priv is passwordless)
   • Click the Battery+ widget — the Power mode / CPU / device toggles are now live.
   • Baseline your idle draw for a few minutes on battery, screen at a fixed
     brightness, then compare after a reboot (kernel params in README.md).
