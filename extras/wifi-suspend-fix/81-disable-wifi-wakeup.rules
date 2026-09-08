@@ -1,0 +1,12 @@
+# Battery+ — disable ACPI/PCIe wakeup capability for the internal BCM4377b
+# Wi-Fi adapter (14e4:4488) on the Intel MacBook Air 9,1 (T2). Installed by
+# ../apply.sh to /etc/udev/rules.d/81-battery-plus-disable-wifi-wakeup.rules.
+#
+# Wake-on-wireless-LAN isn't used here, and this device has a known PCI
+# power-management D3 timeout on suspend (see battery-plus-wifi-suspend-fix)
+# — leaving it armed as a wakeup source keeps a power rail live through S3
+# for no benefit and is one more thing that can trigger a spurious wake.
+#
+# Intentionally NOT touching the xHCI USB controller's wakeup flag — that's
+# what lets the keyboard/trackpad wake the machine from sleep.
+ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x14e4", ATTR{device}=="0x4488", ATTR{power/wakeup}="disabled"

@@ -84,6 +84,70 @@ function raplLabel(rapl) {
   return parts.join("  ·  ");
 }
 
+// ---------- Sleep-drain tracking (extras/sleep-tracking) -----------------
+
+function fmtSleepDuration(sec) {
+  var s = Math.max(0, Math.round(Number(sec) || 0));
+  var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  if (h > 0) return h + "h " + (m < 10 ? "0" : "") + m + "m";
+  if (m > 0) return m + "m";
+  return s + "s";
+}
+
+function fmtPctPerHour(v) {
+  return (Number(v) || 0).toFixed(2) + "%/hr";
+}
+
+// Coarse "how long ago" for the last-sleep timestamp; ISO string in, words out.
+function fmtAgo(iso) {
+  var t = Date.parse(iso || "");
+  if (isNaN(t)) return "";
+  var mins = Math.max(0, Math.round((Date.now() - t) / 60000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return mins + "m ago";
+  var hrs = Math.round(mins / 60);
+  if (hrs < 48) return hrs + "h ago";
+  return Math.round(hrs / 24) + "d ago";
+}
+
+// Null until at least one real sleep has been recorded.
+function sleepSummary(s) {
+  if (!s || !s.samples) return null;
+  return {
+    ago: fmtAgo(s.lastAt),
+    duration: fmtSleepDuration(s.lastDurationSec),
+    lastRate: fmtPctPerHour(s.lastPctPerHour),
+    lastWatts: fmtWatts(s.lastWatts),
+    avgRate: fmtPctPerHour(s.avgPctPerHour),
+    avgWatts: fmtWatts(s.avgWatts),
+    samples: Number(s.samples) || 0
+  };
+}
+
+// ---------- Wi-Fi suspend-fix detector (extras/wifi-suspend-fix) ---------
+// Shown only when the exact BCM4377b PM-timeout bug has actually been
+// observed on this machine (see bin/battery-plus-data), not just when the
+// chip is present.
+function showWifiFixBanner(w) {
+  return !!(w && w.chipPresent && w.problemSeen && !w.installed);
+}
+
+var WIFI_FIX_INFO = {
+  title: "Wi-Fi suspend bug detected",
+  help: "Known issue on the Intel MacBook Air 9,1 (T2): leaving the brcmfmac "
+      + "driver bound during suspend times out its PCI power-management call "
+      + "(errno -5), which aborts suspend and can crash-loop it continuously — "
+      + "draining the battery in hours instead of days. The fix unloads the "
+      + "driver before suspend and reloads it after resume, and stops the card "
+      + "being armed as a wakeup source."
+};
+
+function wifiFixBlurb(w) {
+  var n = (w && w.failCount) || 0;
+  return "Suspend has failed " + n + " time" + (n === 1 ? "" : "s")
+       + " at this Wi-Fi adapter.";
+}
+
 // Device-power-saving rows: what each toggle does, plus the tradeoff to weigh
 // before turning it on. `blurb` shows under the label; `help` opens on the (i).
 var TWEAK_INFO = [

@@ -19,7 +19,9 @@ Item {
     cpu:    { governor: "?", epp: "?", turbo: true, freqMHz: 0, pkgTempC: "", load1: 0 },
     tlp:    { installed: false, active: false, mode: "unknown", manual: false },
     tweaks: { wifi: false, usb: false, pcie: false, audio: false },
-    procs:  []
+    procs:  [],
+    sleep:  { installed: false },
+    wifiFix: { chipPresent: false, installed: false, problemSeen: false, failCount: 0 }
   })
 
   // rolling power-draw samples for the sparkline (watts), oldest first
@@ -33,6 +35,8 @@ Item {
   readonly property var tlp: snapshot.tlp
   readonly property var tweaks: snapshot.tweaks
   readonly property var procs: snapshot.procs
+  readonly property var sleep: snapshot.sleep
+  readonly property var wifiFix: snapshot.wifiFix
 
   signal updated()
 

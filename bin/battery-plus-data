@@ -144,6 +144,55 @@ if [ -r "$PERSIST" ]; then
   grep -qE '^SOUND_POWER_SAVE_ON_BAT=' "$PERSIST" && pin_audio=true
 fi
 
+# ---------- sleep-drain tracking (extras/sleep-tracking) --------------
+sleep_installed=false
+[ -x /usr/lib/systemd/system-sleep/battery-plus-sleep ] && sleep_installed=true
+sleep_json='{}'
+SLEEPLOG=/var/log/battery-plus-sleep.log
+if [ -r "$SLEEPLOG" ]; then
+  last=$(tail -n1 "$SLEEPLOG" 2>/dev/null)
+  samples=$(grep -c . "$SLEEPLOG" 2>/dev/null || echo 0)
+  if [ -n "$last" ]; then
+    at=$(awk '{print $1}' <<<"$last")
+    dur=$(grep -oE 'duration=[0-9]+'          <<<"$last" | cut -d= -f2)
+    pre=$(grep -oE 'pre_cap=[0-9]+'           <<<"$last" | cut -d= -f2)
+    post=$(grep -oE 'post_cap=[0-9]+'         <<<"$last" | cut -d= -f2)
+    w=$(grep -oE 'watts=[0-9.]+'              <<<"$last" | cut -d= -f2)
+    pph=$(grep -oE 'pct_per_hour=-?[0-9.]+'   <<<"$last" | cut -d= -f2)
+    # rolling average over the last 5 samples, so one odd short nap doesn't
+    # dominate the headline number
+    avgw=$(tail -n5 "$SLEEPLOG" | grep -oE 'watts=[0-9.]+'            | cut -d= -f2 | awk '{s+=$1;n++} END{if(n) printf "%.3f", s/n; else print 0}')
+    avgpph=$(tail -n5 "$SLEEPLOG" | grep -oE 'pct_per_hour=-?[0-9.]+' | cut -d= -f2 | awk '{s+=$1;n++} END{if(n) printf "%.3f", s/n; else print 0}')
+    sleep_json=$(jq -cn \
+      --arg at "${at:-}" --argjson dur "${dur:-0}" --argjson pre "${pre:-0}" --argjson post "${post:-0}" \
+      --argjson watts "${w:-0}" --argjson pph "${pph:-0}" --argjson samples "${samples:-0}" \
+      --argjson avgWatts "${avgw:-0}" --argjson avgPctPerHour "${avgpph:-0}" \
+      '{lastAt:$at, lastDurationSec:$dur, lastPreCap:$pre, lastPostCap:$post,
+        lastWatts:$watts, lastPctPerHour:$pph, samples:$samples,
+        avgWatts:$avgWatts, avgPctPerHour:$avgPctPerHour}')
+  fi
+fi
+
+# ---------- Wi-Fi suspend-fix detector (extras/wifi-suspend-fix) -------
+# Only flags the exact BCM4377b (Intel MacBook Air 9,1 / T2) PM-timeout bug:
+# hardware present, the fix isn't already installed, and suspend_stats shows
+# the specific errno -5 failure at that device — not just "this chip exists".
+wifi_chip=false
+lspci -nn 2>/dev/null | grep -q '14e4:4488' && wifi_chip=true
+wifi_fix_installed=false
+[ -x /usr/lib/systemd/system-sleep/battery-plus-wifi-suspend-fix ] && wifi_fix_installed=true
+wifi_problem=false
+wifi_fails=$(cat /sys/power/suspend_stats/fail 2>/dev/null || echo 0)
+if [ "${wifi_fails:-0}" -gt 0 ] && [ -r /sys/power/suspend_stats/last_failed_dev ]; then
+  lfd=$(cat /sys/power/suspend_stats/last_failed_dev 2>/dev/null)
+  lfe=$(cat /sys/power/suspend_stats/last_failed_errno 2>/dev/null)
+  if [ -n "${lfd:-}" ] && [ "$lfe" = "-5" ]; then
+    dv=$(cat "/sys/bus/pci/devices/$lfd/vendor" 2>/dev/null)
+    dd=$(cat "/sys/bus/pci/devices/$lfd/device" 2>/dev/null)
+    [ "$dv" = "0x14e4" ] && [ "$dd" = "0x4488" ] && wifi_problem=true
+  fi
+fi
+
 # ---------- top consumers (CPU% as a power proxy; helpers folded) -----
 top_json=$(ps -eo comm,pcpu --no-headers 2>/dev/null \
   | awk '$1!~/^(ps|awk|sort|head|jq)$/ {a[$1]+=$2}
@@ -164,6 +213,9 @@ jq -cn \
   --argjson wifi "$wifi_ps" --argjson usb "$usb_as" --argjson pcie "$pcie_pm" --argjson audio "$audio_ps" \
   --argjson pinWifi "$pin_wifi" --argjson pinUsb "$pin_usb" --argjson pinPcie "$pin_pcie" --argjson pinAudio "$pin_audio" \
   --argjson top "$top_json" \
+  --argjson sleep "$sleep_json" --argjson sleepInstalled "$sleep_installed" \
+  --argjson wifiChip "$wifi_chip" --argjson wifiFixInstalled "$wifi_fix_installed" \
+  --argjson wifiProblem "$wifi_problem" --argjson wifiFails "${wifi_fails:-0}" \
   '{
     battery: { present:$present, percent:$percent, status:$status, watts:$watts, health:$health,
                whFull:$whFull, whDesign:$whDesign, cycles:$cycles, tempC:$btemp, minutes:$minutes,
@@ -173,5 +225,7 @@ jq -cn \
     tlp:    { installed:$tlpInstalled, active:$tlpActive, mode:$tlpMode, manual:$tlpManual },
     tweaks: { wifi:$wifi, usb:$usb, pcie:$pcie, audio:$audio,
               wifiPinned:$pinWifi, usbPinned:$pinUsb, pciePinned:$pinPcie, audioPinned:$pinAudio },
-    top:    $top
+    top:    $top,
+    sleep:  ($sleep + {installed:$sleepInstalled}),
+    wifiFix: { chipPresent:$wifiChip, installed:$wifiFixInstalled, problemSeen:$wifiProblem, failCount:$wifiFails }
   }'

@@ -25,6 +25,9 @@ leaving the bar.
   Toggles take effect immediately; **Keep after reboot** writes the setting to a
   plugin-owned drop-in (`/etc/tlp.d/02-battery-plus.conf`) so it persists.
 - **PowerTOP scan** and **Full dashboard** buttons open a floating terminal.
+- **Sleep** — opt-in tracking of real battery drain during suspend: watts and
+  %/hour for the last sleep, plus a rolling average. See below.
+- **Wi-Fi suspend-fix banner** — appears only when it's actually needed. See below.
 
 Right-click the bar icon toggles the inline percentage.
 
@@ -76,6 +79,41 @@ undoes it.
 Masking `power-profiles-daemon` disables the profile buttons in the stock
 `omarchy.power` widget — Battery+'s Power-mode control replaces them.
 
+## Sleep-drain tracking (optional)
+
+```bash
+~/.config/omarchy/plugins/io.github.amikeal.battery-plus/extras/sleep-tracking/apply.sh
+```
+
+Installs a `systemd-sleep` hook that records battery capacity/charge/voltage
+immediately before and after every suspend, and appends one measured line to
+`/var/log/battery-plus-sleep.log`. The panel's **Sleep** section reads that
+log — no TLP dependency, works standalone. `extras/sleep-tracking/revert.sh`
+removes the hook (the log is left in place). The panel also offers to install
+this inline, under "Sleep", if it isn't set up yet.
+
+## Wi-Fi suspend fix — Intel MacBook Air 9,1 / T2 (conditional)
+
+The panel watches `/sys/power/suspend_stats` for a specific, known bug: on
+this machine's BCM4377b Wi-Fi adapter (PCI `14e4:4488`), leaving the
+`brcmfmac` driver bound during suspend times out its PCI power-management
+call (errno `-5`), which aborts suspend and — left unfixed — can crash-loop
+suspend/resume continuously, draining the battery in hours instead of days.
+
+If that chip is present *and* the failure has actually been observed *and*
+the fix isn't already installed, a banner appears at the top of the panel
+explaining it with a one-click install. Nothing shows up if you don't have
+this chip, or if you have it but haven't hit the bug.
+
+```bash
+~/.config/omarchy/plugins/io.github.amikeal.battery-plus/extras/wifi-suspend-fix/apply.sh
+```
+
+Installs a `systemd-sleep` hook that unloads `brcmfmac`/`brcmfmac_wcc` before
+suspend and reloads them after resume, plus a udev rule that stops the card
+being armed as an ACPI wakeup source (wake-on-wireless-LAN isn't used here).
+`extras/wifi-suspend-fix/revert.sh` undoes both.
+
 ## Privileges
 
 The Power-mode, CPU, and device toggles need root. The installer copies
@@ -85,6 +123,11 @@ the panel invokes it through `sudo -n` with no prompt. Every branch of that
 helper is a fixed operation on a fixed sysfs path or a whitelisted TLP key —
 no argument is executed or used to build a path. Without the helper the panel
 falls back to a `pkexec` prompt per action.
+
+Nothing else is passwordless — `tlp`, `tlp-stat`, and `powertop` are not in
+the sudoers file, deliberately. Running them by hand still prompts for your
+password; the "PowerTOP scan" and "Full dashboard" buttons open an
+interactive terminal for exactly that reason.
 
 After editing `bin/battery-plus-priv`, redeploy it:
 
@@ -114,6 +157,8 @@ bin/battery-plus-data       prints one JSON blob (fast, unprivileged)
 bin/battery-plus-action     performs one change, then re-prints the data
 bin/battery-plus-priv       the single privileged entry point
 extras/power-tuning/        TLP installer / revert / drop-in config
+extras/sleep-tracking/      sleep-drain hook, installer / revert
+extras/wifi-suspend-fix/    BCM4377b (T2 MacBook Air) suspend fix, installer / revert
 extras/battery-dashboard    the gum TUI behind the "Full dashboard" button
 extras/battery-common.sh    shared battery probe for the TUI
 ```

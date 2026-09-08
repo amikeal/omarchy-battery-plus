@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Battery+ — BCM4377b (PCI 14e4:4488) suspend/resume fix for the Intel
+# MacBook Air 9,1 (T2). Installed by ./apply.sh to
+# /usr/lib/systemd/system-sleep/battery-plus-wifi-suspend-fix.
+#
+# Leaving brcmfmac bound during suspend causes the Wi-Fi PCI
+# power-management op to time out (-5/EIO on
+# brcmf_pcie_pm_enter_D3), which aborts suspend and — left unfixed — can
+# crash-loop suspend/resume continuously, draining the battery in hours
+# instead of days. Unloading the driver before suspend and reloading it
+# after resume produces a clean S3 resume and restores Wi-Fi.
+#
+# Reported/discussed:
+#   https://github.com/omacom/omarchy/discussions/4695
+#   https://wiki.t2linux.org/distributions/fedora/faq/
+set -u
+
+case "${1:-}" in
+  pre)
+    logger -t battery-plus-wifi-suspend-fix "pre-suspend: stopping NetworkManager, unloading brcmfmac_wcc/brcmfmac"
+    systemctl stop NetworkManager
+    modprobe -r brcmfmac_wcc
+    modprobe -r brcmfmac
+    ;;
+  post)
+    logger -t battery-plus-wifi-suspend-fix "post-resume: reloading brcmfmac/brcmfmac_wcc, starting NetworkManager"
+    modprobe brcmfmac
+    modprobe brcmfmac_wcc
+    systemctl start NetworkManager
+    ;;
+esac

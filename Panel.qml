@@ -55,6 +55,8 @@ Panel {
   readonly property var cpu: service.cpu
   readonly property var tlp: service.tlp
   readonly property var tweaks: service.tweaks
+  readonly property var sleepData: service.sleep
+  readonly property var wifiFix: service.wifiFix
 
   readonly property bool showPercentage: setting("showPercentage", true) === true
 
@@ -207,6 +209,50 @@ Panel {
             }
           }
 
+          // ---------- Wi-Fi suspend-fix banner (only when actually seen) ----------
+          BorderSurface {
+            visible: Model.showWifiFixBanner(root.wifiFix)
+            width: parent.width
+            implicitHeight: wifiFixCol.implicitHeight + Style.space(24)
+            color: Style.normalFillFor(root.fg, root.urgent)
+            borderSpec: Border.controlSpec("normal", root.fg, root.urgent)
+            radius: Style.cornerRadius
+
+            Column {
+              id: wifiFixCol
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.margins: Style.space(12)
+              spacing: Style.space(8)
+
+              Text {
+                width: parent.width
+                text: Model.WIFI_FIX_INFO.title
+                color: root.fg
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.subtitle
+                font.bold: true
+              }
+              Text {
+                width: parent.width
+                text: Model.wifiFixBlurb(root.wifiFix) + " " + Model.WIFI_FIX_INFO.help
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                wrapMode: Text.WordWrap
+              }
+              Button {
+                text: "Install Wi-Fi suspend fix"
+                bordered: true
+                focusable: true
+                foreground: root.fg
+                fontFamily: root.fontFamily
+                onClicked: { service.openTerminal("install-wifi-fix"); root.close() }
+              }
+            }
+          }
+
           // ---------- Stats grid ----------
           Grid {
             id: statsGrid
@@ -300,6 +346,76 @@ Panel {
                   ctx.fillStyle = Qt.rgba(line.r, line.g, line.b, 0.14)
                   ctx.fill()
                 }
+              }
+            }
+          }
+
+          // ---------- Sleep-drain tracking ----------
+          Column {
+            width: parent.width
+            spacing: Style.space(8)
+
+            PanelSeparator { foreground: root.fg }
+            PanelSectionHeader { text: "SLEEP"; foreground: root.fg; fontFamily: root.fontFamily }
+
+            // Not installed yet — slim opt-in row, no TLP dependency.
+            Item {
+              visible: !root.sleepData.installed
+              width: parent.width
+              implicitHeight: Math.max(sleepOptInText.implicitHeight, sleepOptInBtn.implicitHeight)
+
+              Text {
+                id: sleepOptInText
+                anchors.left: parent.left
+                anchors.right: sleepOptInBtn.left
+                anchors.rightMargin: Style.space(8)
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Not tracked yet — measure real watts and %/hour drawn during sleep."
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                wrapMode: Text.WordWrap
+              }
+              Button {
+                id: sleepOptInBtn
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Track sleep drain"
+                bordered: true
+                focusable: true
+                foreground: root.fg
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                onClicked: { service.openTerminal("install-sleep-tracking"); root.close() }
+              }
+            }
+
+            // Installed, but no sleep cycle recorded yet.
+            Text {
+              visible: root.sleepData.installed && !Model.sleepSummary(root.sleepData)
+              width: parent.width
+              text: "Installed — data appears after the next real sleep cycle."
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              wrapMode: Text.WordWrap
+            }
+
+            // Installed and measured.
+            Grid {
+              width: parent.width
+              visible: root.sleepData.installed && !!Model.sleepSummary(root.sleepData)
+              columns: 2
+              columnSpacing: Style.space(16)
+              rowSpacing: Style.spacing.sm
+              readonly property var sum: Model.sleepSummary(root.sleepData) || ({})
+
+              StatPair { label: "Last sleep"; value: parent.sum.duration || "—" }
+              StatPair { label: "When"; value: parent.sum.ago || "—" }
+              StatPair { label: "Last draw"; value: (parent.sum.lastWatts || "—") + "  ·  " + (parent.sum.lastRate || "") }
+              StatPair {
+                label: "Avg (" + (parent.sum.samples || 0) + " sleeps)"
+                value: (parent.sum.avgWatts || "—") + "  ·  " + (parent.sum.avgRate || "")
               }
             }
           }
@@ -597,7 +713,9 @@ Panel {
     id: sp
     property string label: ""
     property string value: ""
-    width: (statsGrid.width - statsGrid.columnSpacing) / 2
+    // Sized for a 2-up grid; works in any Grid parent that sets columnSpacing,
+    // not just the original "Stats" one.
+    width: parent ? (parent.width - (parent.columnSpacing || 0)) / 2 : implicitWidth
     implicitHeight: Math.max(spLabel.implicitHeight, spValue.implicitHeight)
 
     Text {
