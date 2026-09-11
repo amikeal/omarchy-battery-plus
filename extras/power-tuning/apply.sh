@@ -6,7 +6,7 @@ set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CONF=/etc/tlp.d/01-omarchy-macbookair.conf
 
-[ "$(id -u)" -ne 0 ] || { echo "Run as your normal user, not root — it calls sudo itself."; exit 1; }
+[ "$EUID" -ne 0 ] || { echo "Run as your normal user, not root — it calls sudo itself."; exit 1; }
 
 PLUGIN=$(cd "$HERE/../.." && pwd)
 
@@ -63,33 +63,42 @@ echo "==> passwordless helper"
 # the "PowerTOP scan" and "Full dashboard" buttons already open an interactive
 # terminal for exactly that.
 if [ -f /usr/local/bin/battery-plus-priv ]; then
-  # $USER is an environment variable, not an authenticated identity — it can
-  # hold anything (whitespace, newlines, another account's name) and once
-  # interpolated into the policy below could inject extra sudoers syntax.
-  # Derive the account from the real UID via a fixed trusted tool instead,
-  # then validate it against the standard Linux username grammar (the same
-  # shape useradd/adduser enforce) before it ever reaches the policy text.
-  invoking_user=$(id -un)
+  # $USER (and an unqualified `id`) are resolved through the caller's own
+  # PATH — a same-UID process could shadow `id` earlier in PATH and report
+  # any grammar-valid account name, which would then be written into a root
+  # sudoers policy. $EUID is a bash builtin populated from geteuid() at
+  # shell startup, not an external lookup, so it can't be shadowed; getent
+  # is invoked by its fixed absolute path to map that numeric UID to a name
+  # via the real NSS/passwd database.
+  invoking_user=$(/usr/bin/getent passwd "$EUID" | /usr/bin/cut -d: -f1)
   if [[ ! "$invoking_user" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
     echo "Refusing to write sudoers policy: unexpected username '$invoking_user'" >&2
     exit 1
   fi
 
-  # Build and validate the policy in a private staging file first — it never
-  # touches /etc/sudoers.d in an unvalidated state. `install` lands it at a
-  # ".new" name inside the real target directory, visudo checks that exact
-  # file (same bytes, same final permissions) once more, and only then does
-  # an in-place `mv` — a same-filesystem rename, hence atomic — make it live
-  # as battery-plus, replacing the old file in one step or not at all.
-  stage=$(mktemp)
-  trap 'rm -f "$stage"' EXIT
-  printf '%s ALL=(root) NOPASSWD: /usr/local/bin/battery-plus-priv\n' "$invoking_user" > "$stage"
-  visudo -cf "$stage"
-  sudo install -o root -g root -m 440 "$stage" /etc/sudoers.d/battery-plus.new
-  sudo visudo -cf /etc/sudoers.d/battery-plus.new
-  sudo mv -f /etc/sudoers.d/battery-plus.new /etc/sudoers.d/battery-plus
-  rm -f "$stage"
-  trap - EXIT
+  # Hand the exact policy bytes to root over a pipe instead of writing them
+  # to a caller-owned temp file that `sudo install` then reopens by path.
+  # That file-based handoff is a TOCTOU window: another same-UID process
+  # could swap its contents for different-but-still-valid sudoers syntax
+  # between our check and root's read, and a later visudo on the installed
+  # copy would accept it just as happily — visudo only checks grammar, not
+  # intent. Piping to a root shell removes the window entirely: the staged
+  # file is created by root, from root's own read of the pipe, so it is
+  # already root:root and unwritable by the caller from its very first
+  # byte. visudo validates that exact root-owned file, and only then does
+  # an in-place `mv` (same filesystem, hence atomic) make it live.
+  policy_line=$(printf '%s ALL=(root) NOPASSWD: /usr/local/bin/battery-plus-priv\n' "$invoking_user")
+  printf '%s' "$policy_line" | sudo bash -c '
+    set -euo pipefail
+    dest=/etc/sudoers.d/battery-plus
+    stage="$dest.new"
+    umask 077
+    cat > "$stage"
+    chown root:root "$stage"
+    chmod 440 "$stage"
+    visudo -cf "$stage" || { rm -f "$stage"; exit 1; }
+    mv -f "$stage" "$dest"
+  '
 else
   echo "    (battery-plus-priv not installed — skipping; tuning toggles will use pkexec prompts)"
 fi
