@@ -206,7 +206,12 @@ menu() {
     "Toggle CPU turbo boost") toggle_turbo ;;
     "Full TLP report")  command -v tlp-stat >/dev/null && sudo tlp-stat | ${PAGER:-less -R} || { note "tlp not installed"; sleep 2; } ;;
     "Tuning notes"*)    tips ;;
-    "Edit TLP config")  sudo "${EDITOR:-nano}" "$TLP_DROPIN" 2>/dev/null || sudoedit "$TLP_DROPIN" ;;
+    # sudoedit runs $EDITOR/$VISUAL unprivileged against a temp copy and
+    # only its own trusted copy-back step touches the real file as root —
+    # unlike `sudo "$EDITOR" file`, which would execute whatever $EDITOR
+    # happens to be (an ordinary, unauthenticated environment variable)
+    # directly as root.
+    "Edit TLP config")  sudoedit "$TLP_DROPIN" ;;
     Quit)              return 1 ;;
   esac
   return 0

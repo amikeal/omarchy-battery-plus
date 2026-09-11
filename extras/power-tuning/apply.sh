@@ -32,7 +32,7 @@ echo "==> packages"
 sudo pacman -S --needed --noconfirm tlp powertop
 
 echo "==> TLP drop-in"
-sudo install -Dm644 "$HERE/tlp-macbookair.conf" "$CONF"
+sudo install -Dm644 -o root -g root "$HERE/tlp-macbookair.conf" "$CONF"
 nvme=$(lspci -D 2>/dev/null | awk '/Non-Volatile memory|NVMe/{print $1; exit}')
 if [ -n "${nvme:-}" ]; then
   printf '\n# auto-detected on install\nRUNTIME_PM_DENYLIST="%s"\n' "$nvme" | sudo tee -a "$CONF" >/dev/null
@@ -104,9 +104,12 @@ else
 fi
 
 echo "==> RAPL readable by group wheel"
+# install -o/-g asserts ownership explicitly, unlike tee (which, like touch,
+# leaves an already-existing file's ownership untouched — see the sleep-
+# tracking log fix for why that matters).
 printf '%s\n' \
   'SUBSYSTEM=="powercap", ACTION=="add", RUN+="/bin/chgrp wheel /sys%p/energy_uj", RUN+="/bin/chmod g+r /sys%p/energy_uj"' \
-  | sudo tee /etc/udev/rules.d/99-rapl-readable.rules >/dev/null
+  | sudo install -Dm644 -o root -g root /dev/stdin /etc/udev/rules.d/99-rapl-readable.rules
 sudo udevadm control --reload
 sudo udevadm trigger --subsystem-match=powercap || true
 # apply to the already-registered domains right now

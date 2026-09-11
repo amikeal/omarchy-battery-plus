@@ -194,12 +194,18 @@ if [ "${wifi_fails:-0}" -gt 0 ] && [ -r /sys/power/suspend_stats/last_failed_dev
 fi
 
 # ---------- top consumers (CPU% as a power proxy; helpers folded) -----
+# A process can name itself almost anything (comm is set via prctl/argv0,
+# and quotes/backslashes are perfectly legal bytes there) — build this
+# through jq's own string escaping rather than a raw printf, so an
+# adversarially-named process can't hand --argjson invalid JSON below and
+# blank the whole data feed.
 top_json=$(ps -eo comm,pcpu --no-headers 2>/dev/null \
   | awk '$1!~/^(ps|awk|sort|head|jq)$/ {a[$1]+=$2}
          END{for(k in a) if(a[k]>=0.3) printf "%.1f\t%s\n", a[k], k}' \
   | sort -rn | head -6 \
-  | awk -F'\t' 'BEGIN{printf "["} {printf "%s{\"name\":\"%s\",\"pct\":%s}", (NR>1?",":""), $2, $1} END{printf "]"}')
-[ -n "$top_json" ] || top_json="[]"
+  | jq -R -s -c '[splits("\n") | select(length > 0) | split("\t") | {name: .[1], pct: (.[0] | tonumber)}]' \
+    2>/dev/null)
+[ -n "${top_json:-}" ] && [ "$top_json" != "null" ] || top_json="[]"
 
 jq -cn \
   --argjson present "$bat_present" --argjson percent "${percent:-0}" --arg status "$status" \

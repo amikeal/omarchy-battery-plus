@@ -50,13 +50,16 @@ case "$verb" in
   scan)
     term "sudo powertop --time=20"; exit 0 ;;
   dashboard)
-    term "$DASH"; exit 0 ;;
+    # term hands its argument to a launcher that runs it as a shell command
+    # line inside the new terminal, so a path containing spaces or other
+    # shell metacharacters needs its own quoting here, not just ours.
+    term "$(printf '%q' "$DASH")"; exit 0 ;;
   install)
-    term "bash $APPLY"; exit 0 ;;
+    term "bash $(printf '%q' "$APPLY")"; exit 0 ;;
   install-sleep-tracking)
-    term "bash $SLEEP_APPLY"; exit 0 ;;
+    term "bash $(printf '%q' "$SLEEP_APPLY")"; exit 0 ;;
   install-wifi-fix)
-    term "bash $WIFI_APPLY"; exit 0 ;;
+    term "bash $(printf '%q' "$WIFI_APPLY")"; exit 0 ;;
 esac
 
 exec "$DIR/battery-plus-data"
