@@ -63,9 +63,33 @@ echo "==> passwordless helper"
 # the "PowerTOP scan" and "Full dashboard" buttons already open an interactive
 # terminal for exactly that.
 if [ -f /usr/local/bin/battery-plus-priv ]; then
-  printf '%s ALL=(root) NOPASSWD: /usr/local/bin/battery-plus-priv\n' "$USER" \
-    | sudo install -Dm440 /dev/stdin /etc/sudoers.d/battery-plus
-  sudo visudo -cf /etc/sudoers.d/battery-plus
+  # $USER is an environment variable, not an authenticated identity — it can
+  # hold anything (whitespace, newlines, another account's name) and once
+  # interpolated into the policy below could inject extra sudoers syntax.
+  # Derive the account from the real UID via a fixed trusted tool instead,
+  # then validate it against the standard Linux username grammar (the same
+  # shape useradd/adduser enforce) before it ever reaches the policy text.
+  invoking_user=$(id -un)
+  if [[ ! "$invoking_user" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+    echo "Refusing to write sudoers policy: unexpected username '$invoking_user'" >&2
+    exit 1
+  fi
+
+  # Build and validate the policy in a private staging file first — it never
+  # touches /etc/sudoers.d in an unvalidated state. `install` lands it at a
+  # ".new" name inside the real target directory, visudo checks that exact
+  # file (same bytes, same final permissions) once more, and only then does
+  # an in-place `mv` — a same-filesystem rename, hence atomic — make it live
+  # as battery-plus, replacing the old file in one step or not at all.
+  stage=$(mktemp)
+  trap 'rm -f "$stage"' EXIT
+  printf '%s ALL=(root) NOPASSWD: /usr/local/bin/battery-plus-priv\n' "$invoking_user" > "$stage"
+  visudo -cf "$stage"
+  sudo install -o root -g root -m 440 "$stage" /etc/sudoers.d/battery-plus.new
+  sudo visudo -cf /etc/sudoers.d/battery-plus.new
+  sudo mv -f /etc/sudoers.d/battery-plus.new /etc/sudoers.d/battery-plus
+  rm -f "$stage"
+  trap - EXIT
 else
   echo "    (battery-plus-priv not installed — skipping; tuning toggles will use pkexec prompts)"
 fi
