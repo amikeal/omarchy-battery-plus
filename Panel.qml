@@ -58,7 +58,10 @@ Panel {
   readonly property var sleepData: service.sleep
   readonly property var wifiFix: service.wifiFix
 
-  readonly property bool showPercentage: setting("showPercentage", true) === true
+  readonly property bool showPercentage: {
+    var value = setting("showPercentage", true)
+    return value === true || String(value) === "true"
+  }
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
@@ -95,9 +98,8 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.showPercentage && !vertical
-      ? (Model.batteryIcon(root.b.percent, root.b.status) + "  " + root.b.percent + "%")
-      : Model.batteryIcon(root.b.percent, root.b.status)
+    text: Model.batteryIcon(root.b.percent, root.b.status)
+    labelText: root.showPercentage && !vertical ? (root.b.percent + "%") : ""
     slotSize: Style.bar.iconSlot * (root.showPercentage && !vertical ? 2.3 : 1)
     tooltipText: root.b.present
       ? ("Battery " + root.b.percent + "%  ·  " + Model.fmtWatts(root.b.watts)
