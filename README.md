@@ -25,8 +25,8 @@ leaving the bar.
   Toggles take effect immediately; **Keep after reboot** writes the setting to a
   plugin-owned drop-in (`/etc/tlp.d/02-battery-plus.conf`) so it persists.
 - **PowerTOP scan** and **Full dashboard** buttons open a floating terminal.
-- **Sleep** — opt-in tracking of real battery drain during suspend: watts and
-  %/hour for the last sleep, plus a rolling average. See below.
+- **Sleep** — real battery drain during suspend: watts and %/hour for the
+  last sleep, plus a rolling average. Works out of the box; see below.
 - **Wi-Fi suspend-fix banner** — appears only when it's actually needed. See below.
 
 Right-click the bar icon toggles the inline percentage.
@@ -79,18 +79,25 @@ undoes it.
 Masking `power-profiles-daemon` disables the profile buttons in the stock
 `omarchy.power` widget — Battery+'s Power-mode control replaces them.
 
-## Sleep-drain tracking (optional)
+## Sleep-drain tracking
 
-```bash
-~/.config/omarchy/plugins/io.github.amikeal.battery-plus/extras/sleep-tracking/apply.sh
-```
+Nothing to install. While the shell runs, `bin/battery-plus-sleepwatch` holds
+a logind *delay* inhibitor lock, the mechanism systemd recommends for apps
+that react to suspend (Omarchy uses the same one to lock the screen first).
+Any logged-in user may take one without a password. When logind announces a
+suspend, the watcher records battery capacity/charge/voltage and releases the
+lock so the suspend goes ahead. On resume it records again and appends one
+measured line to `~/.local/state/battery-plus/sleep.log`, then takes the
+lock again. Sleeps under a minute (aborted suspends) are skipped.
 
-Installs a `systemd-sleep` hook that records battery capacity/charge/voltage
-immediately before and after every suspend, and appends one measured line to
-`/var/log/battery-plus-sleep.log`. The panel's **Sleep** section reads that
-log — no TLP dependency, works standalone. `extras/sleep-tracking/revert.sh`
-removes the hook (the log is left in place). The panel also offers to install
-this inline, under "Sleep", if it isn't set up yet.
+`systemd-inhibit --list` shows the lock as `Battery+`. If the watcher is
+killed, its lock goes with it, so it can never hold up a suspend.
+
+**Upgrading from an earlier version:** the old root-installed hook
+(`/usr/lib/systemd/system-sleep/battery-plus-sleep`) is no longer needed. Its
+history in `/var/log/battery-plus-sleep.log` is copied over the first time the
+watcher runs, and the panel offers a **Remove old hook** button under "Sleep"
+(or run `extras/sleep-tracking/revert.sh`).
 
 ## Wi-Fi suspend fix — Intel MacBook Air 9,1 / T2 (conditional)
 
@@ -156,8 +163,9 @@ Model.js                    formatting / derivation helpers
 bin/battery-plus-data       prints one JSON blob (fast, unprivileged)
 bin/battery-plus-action     performs one change, then re-prints the data
 bin/battery-plus-priv       the single privileged entry point
+bin/battery-plus-sleepwatch sleep-drain recorder (logind inhibitor lock, no root)
 extras/power-tuning/        TLP installer / revert / drop-in config
-extras/sleep-tracking/      sleep-drain hook, installer / revert
+extras/sleep-tracking/      removes the root hook used by earlier versions
 extras/wifi-suspend-fix/    BCM4377b (T2 MacBook Air) suspend fix, installer / revert
 extras/battery-dashboard    the gum TUI behind the "Full dashboard" button
 extras/battery-common.sh    shared battery probe for the TUI

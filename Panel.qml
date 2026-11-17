@@ -364,55 +364,60 @@ Panel {
             PanelSeparator { foreground: root.fg }
             PanelSectionHeader { text: "SLEEP"; foreground: root.fg; fontFamily: root.fontFamily }
 
-            // Not installed yet — slim opt-in row, no TLP dependency.
+            // The root-installed hook from earlier versions: no longer needed,
+            // since bin/battery-plus-sleepwatch now tracks sleep unprivileged.
             Item {
-              visible: !root.sleepData.installed
+              visible: !!root.sleepData.legacyHook
               width: parent.width
-              implicitHeight: Math.max(sleepOptInText.implicitHeight, sleepOptInBtn.implicitHeight)
+              implicitHeight: Math.max(legacyText.implicitHeight, legacyBtn.implicitHeight)
 
               Text {
-                id: sleepOptInText
+                id: legacyText
                 anchors.left: parent.left
-                anchors.right: sleepOptInBtn.left
+                anchors.right: legacyBtn.left
                 anchors.rightMargin: Style.space(8)
                 anchors.verticalCenter: parent.verticalCenter
-                text: "Not tracked yet — measure real watts and %/hour drawn during sleep."
+                textFormat: Text.PlainText
+                text: "Sleep is now tracked without root. The old system hook is still installed and can go."
                 color: root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
                 wrapMode: Text.WordWrap
               }
               Button {
-                id: sleepOptInBtn
+                id: legacyBtn
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                text: "Track sleep drain"
+                text: "Remove old hook"
                 bordered: true
                 focusable: true
                 foreground: root.fg
                 fontFamily: root.fontFamily
                 fontSize: Style.font.bodySmall
-                onClicked: { service.openTerminal("install-sleep-tracking"); root.close() }
+                onClicked: { service.openTerminal("remove-legacy-sleep-hook"); root.close() }
               }
             }
 
-            // Installed, but no sleep cycle recorded yet.
+            // Nothing recorded yet.
             Text {
-              visible: root.sleepData.installed && !Model.sleepSummary(root.sleepData)
+              visible: !Model.sleepSummary(root.sleepData)
               width: parent.width
-              text: "Installed — data appears after the next real sleep cycle."
+              textFormat: Text.PlainText
+              text: root.sleepData.watching
+                ? "Watching — data appears after the next sleep of a minute or more."
+                : "The sleep watcher isn't running."
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               wrapMode: Text.WordWrap
             }
 
-            // Installed and measured. Duration/when fit a 2-up grid; the
+            // Measured. Duration/when fit a 2-up grid; the
             // draw figures ("0.17 W · 0.33 %/h") need a full row each.
             Column {
               id: sleepStats
               width: parent.width
-              visible: root.sleepData.installed && !!Model.sleepSummary(root.sleepData)
+              visible: !!Model.sleepSummary(root.sleepData)
               spacing: Style.spacing.sm
               readonly property var sum: Model.sleepSummary(root.sleepData) || ({})
 

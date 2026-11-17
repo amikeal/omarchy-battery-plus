@@ -20,7 +20,7 @@ Item {
     tlp:    { installed: false, active: false, mode: "unknown", manual: false },
     tweaks: { wifi: false, usb: false, pcie: false, audio: false },
     procs:  [],
-    sleep:  { installed: false },
+    sleep:  { watching: false, legacyHook: false, samples: 0 },
     wifiFix: { chipPresent: false, installed: false, problemSeen: false, failCount: 0 }
   })
 
@@ -83,6 +83,21 @@ Item {
   Process {
     id: actionProc
     stdout: StdioCollector { waitForEnd: true; onStreamFinished: root._ingest(text) }
+  }
+
+  // Sleep-drain watcher (bin/battery-plus-sleepwatch). Long-running; it
+  // exits at once if another bar on another monitor already runs it, so
+  // retry on a slow timer rather than immediately.
+  Process {
+    id: sleepWatch
+    command: [root.binDir + "/battery-plus-sleepwatch"]
+    running: root.binDir !== ""
+    onExited: sleepWatchRetry.restart()
+  }
+  Timer {
+    id: sleepWatchRetry
+    interval: 30000
+    onTriggered: sleepWatch.running = true
   }
 
   // Poll fast while the panel is open; keep a slow background poll otherwise

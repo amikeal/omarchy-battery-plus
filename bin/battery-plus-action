@@ -10,7 +10,7 @@
 #   battery-plus-action persist   wifi|usb|pcie|audio  on|off   (write to TLP config)
 #   battery-plus-action unpersist wifi|usb|pcie|audio          (back to defaults)
 #   battery-plus-action scan | dashboard | install                    (opens a terminal)
-#   battery-plus-action install-sleep-tracking | install-wifi-fix     (opens a terminal)
+#   battery-plus-action remove-legacy-sleep-hook | install-wifi-fix   (opens a terminal)
 set -uo pipefail
 export LC_ALL=C
 PATH=/usr/local/bin:/usr/bin:/bin
@@ -31,7 +31,7 @@ term() { setsid omarchy-launch-floating-terminal-with-presentation "$@" >/dev/nu
 pick() { for p in "$@"; do [ -e "$p" ] && { echo "$p"; return; }; done; echo "$1"; }
 DASH=$(pick "$REPO/extras/battery-dashboard" "$HOME/.config/omarchy/bar/scripts/battery-dashboard")
 APPLY=$(pick "$REPO/extras/power-tuning/apply.sh" "$HOME/.config/omarchy/power-tuning/apply.sh")
-SLEEP_APPLY=$(pick "$REPO/extras/sleep-tracking/apply.sh" "$HOME/.config/omarchy/sleep-tracking/apply.sh")
+SLEEP_REVERT=$(pick "$REPO/extras/sleep-tracking/revert.sh" "$HOME/.config/omarchy/sleep-tracking/revert.sh")
 WIFI_APPLY=$(pick "$REPO/extras/wifi-suspend-fix/apply.sh" "$HOME/.config/omarchy/wifi-suspend-fix/apply.sh")
 
 case "$verb" in
@@ -56,8 +56,8 @@ case "$verb" in
     term "$(printf '%q' "$DASH")"; exit 0 ;;
   install)
     term "bash $(printf '%q' "$APPLY")"; exit 0 ;;
-  install-sleep-tracking)
-    term "bash $(printf '%q' "$SLEEP_APPLY")"; exit 0 ;;
+  remove-legacy-sleep-hook)
+    term "bash $(printf '%q' "$SLEEP_REVERT")"; exit 0 ;;
   install-wifi-fix)
     term "bash $(printf '%q' "$WIFI_APPLY")"; exit 0 ;;
 esac

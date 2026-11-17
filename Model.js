@@ -84,7 +84,7 @@ function raplLabel(rapl) {
   return parts.join("  ·  ");
 }
 
-// ---------- Sleep-drain tracking (extras/sleep-tracking) -----------------
+// ---------- Sleep-drain tracking (bin/battery-plus-sleepwatch) -----------------
 
 function fmtSleepDuration(sec) {
   var s = Math.max(0, Math.round(Number(sec) || 0));

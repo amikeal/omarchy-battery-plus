@@ -154,11 +154,20 @@ if [ -r "$PERSIST" ]; then
   grep -qE '^SOUND_POWER_SAVE_ON_BAT=' "$PERSIST" && pin_audio=true
 fi
 
-# ---------- sleep-drain tracking (extras/sleep-tracking) --------------
-sleep_installed=false
-[ -x /usr/lib/systemd/system-sleep/battery-plus-sleep ] && sleep_installed=true
+# ---------- sleep-drain tracking (bin/battery-plus-sleepwatch) --------
+SLEEPDIR=${XDG_STATE_HOME:-$HOME/.local/state}/battery-plus
+SLEEPLOG=$SLEEPDIR/sleep.log
+sleep_watching=false
+swpid=$(cat "$SLEEPDIR/sleepwatch.pid" 2>/dev/null)
+if [[ $swpid =~ ^[0-9]+$ ]] && grep -qa battery-plus-sleepwatch "/proc/$swpid/cmdline" 2>/dev/null; then
+  sleep_watching=true
+fi
+# The root-installed hook this replaced; the panel offers to remove it.
+sleep_legacy=false
+[ -e /usr/lib/systemd/system-sleep/battery-plus-sleep ] && sleep_legacy=true
+# The log is user-writable: only pass well-formed numbers through to jq.
+num() { [[ ${1:-} =~ ^-?[0-9]+(\.[0-9]+)?$ ]] && echo "$1" || echo 0; }
 sleep_json='{}'
-SLEEPLOG=/var/log/battery-plus-sleep.log
 if [ -r "$SLEEPLOG" ]; then
   last=$(tail -n1 "$SLEEPLOG" 2>/dev/null)
   samples=$(grep -c . "$SLEEPLOG" 2>/dev/null || echo 0)
@@ -173,15 +182,19 @@ if [ -r "$SLEEPLOG" ]; then
     # dominate the headline number
     avgw=$(tail -n5 "$SLEEPLOG" | grep -oE 'watts=[0-9.]+'            | cut -d= -f2 | awk '{s+=$1;n++} END{if(n) printf "%.3f", s/n; else print 0}')
     avgpph=$(tail -n5 "$SLEEPLOG" | grep -oE 'pct_per_hour=-?[0-9.]+' | cut -d= -f2 | awk '{s+=$1;n++} END{if(n) printf "%.3f", s/n; else print 0}')
+    [[ $at =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:+-]+$ ]] || at=""
     sleep_json=$(jq -cn \
-      --arg at "${at:-}" --argjson dur "${dur:-0}" --argjson pre "${pre:-0}" --argjson post "${post:-0}" \
-      --argjson watts "${w:-0}" --argjson pph "${pph:-0}" --argjson samples "${samples:-0}" \
-      --argjson avgWatts "${avgw:-0}" --argjson avgPctPerHour "${avgpph:-0}" \
+      --arg at "${at:-}" --argjson dur "$(num "$dur")" --argjson pre "$(num "$pre")" --argjson post "$(num "$post")" \
+      --argjson watts "$(num "$w")" --argjson pph "$(num "$pph")" --argjson samples "$(num "$samples")" \
+      --argjson avgWatts "$(num "$avgw")" --argjson avgPctPerHour "$(num "$avgpph")" \
       '{lastAt:$at, lastDurationSec:$dur, lastPreCap:$pre, lastPostCap:$post,
         lastWatts:$watts, lastPctPerHour:$pph, samples:$samples,
         avgWatts:$avgWatts, avgPctPerHour:$avgPctPerHour}')
   fi
 fi
+
+# A failed jq above must not take the whole blob down with it.
+[ -n "$sleep_json" ] || sleep_json='{}'
 
 # ---------- Wi-Fi suspend-fix detector (extras/wifi-suspend-fix) -------
 # Only flags the exact BCM4377b (Intel MacBook Air 9,1 / T2) PM-timeout bug:
@@ -229,7 +242,7 @@ jq -cn \
   --argjson wifi "$wifi_ps" --argjson usb "$usb_as" --argjson pcie "$pcie_pm" --argjson audio "$audio_ps" \
   --argjson pinWifi "$pin_wifi" --argjson pinUsb "$pin_usb" --argjson pinPcie "$pin_pcie" --argjson pinAudio "$pin_audio" \
   --argjson top "$top_json" \
-  --argjson sleep "$sleep_json" --argjson sleepInstalled "$sleep_installed" \
+  --argjson sleep "$sleep_json" --argjson sleepWatching "$sleep_watching" --argjson sleepLegacy "$sleep_legacy" \
   --argjson wifiChip "$wifi_chip" --argjson wifiFixInstalled "$wifi_fix_installed" \
   --argjson wifiProblem "$wifi_problem" --argjson wifiFails "${wifi_fails:-0}" \
   '{
@@ -242,6 +255,6 @@ jq -cn \
     tweaks: { wifi:$wifi, usb:$usb, pcie:$pcie, audio:$audio,
               wifiPinned:$pinWifi, usbPinned:$pinUsb, pciePinned:$pinPcie, audioPinned:$pinAudio },
     top:    $top,
-    sleep:  ($sleep + {installed:$sleepInstalled}),
+    sleep:  ($sleep + {watching:$sleepWatching, legacyHook:$sleepLegacy}),
     wifiFix: { chipPresent:$wifiChip, installed:$wifiFixInstalled, problemSeen:$wifiProblem, failCount:$wifiFails }
   }'

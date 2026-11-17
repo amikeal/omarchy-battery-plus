@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# Battery+ — sleep-drain watcher. PowerService.qml starts it with the shell;
+# it runs as the user and needs no root and no install step.
+#
+# It holds a logind "delay" inhibitor lock — the mechanism systemd recommends
+# for apps that react to suspend (Omarchy uses the same one to lock the screen
+# first). When logind announces PrepareForSleep(true) the watcher records the
+# battery, then releases the lock so suspend goes ahead. On PrepareForSleep
+# (false), i.e. resume, it records again, appends one line to the log, and
+# takes the lock again.
+#
+# Log: ${XDG_STATE_HOME:-~/.local/state}/battery-plus/sleep.log, one line per sleep:
+#   <iso-time> duration=<s> pre_cap=<%> post_cap=<%> drop_wh=<Wh> watts=<W> pct_per_hour=<%/h>
+#
+# Test hooks (not used by the plugin):
+#   BATTERY_PLUS_STATE_DIR      log/pid directory
+#   BATTERY_PLUS_SLEEP_EVENTS   read "PrepareForSleep (true,)"-style lines from
+#                               this file/FIFO instead of the system bus
+#   BATTERY_PLUS_NO_INHIBIT=1   don't take the inhibitor lock
+#   BATTERY_PLUS_MIN_SLEEP_SEC  shortest sleep worth logging (default 60)
+set -u
+export LC_ALL=C
+PATH=/usr/local/bin:/usr/bin:/bin
+
+STATE_DIR=${BATTERY_PLUS_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/battery-plus}
+LOG=$STATE_DIR/sleep.log
+PIDFILE=$STATE_DIR/sleepwatch.pid
+LEGACY_LOG=/var/log/battery-plus-sleep.log
+# Aborted suspends resume within seconds; logging them would only add noise
+# (and a suspend crash-loop would flood the log).
+MIN_SEC=${BATTERY_PLUS_MIN_SLEEP_SEC:-60}
+LOG_KEEP=1000
+
+mkdir -p "$STATE_DIR" || exit 1
+
+# One watcher per user, however many bars instantiate the widget. Every child
+# below gets 9>&- so a straggler can't keep holding this lock.
+exec 9>"$STATE_DIR/sleepwatch.lock"
+flock -n 9 || exit 0
+echo $$ > "$PIDFILE"
+
+# Carry history over from the old root-installed hook, once.
+if [ ! -e "$LOG" ] && [ -f "$LEGACY_LOG" ] && [ ! -L "$LEGACY_LOG" ] && [ -r "$LEGACY_LOG" ]; then
+  cp -- "$LEGACY_LOG" "$LOG.tmp" 9>&- && mv -f -- "$LOG.tmp" "$LOG" 9>&-
+fi
+
+# Match by type, not name: ACPI calls it BAT0, Apple SMC "macsmc-battery".
+# scope=Device marks a peripheral (mouse, phone), never the system battery.
+find_battery() {
+  local d
+  for d in /sys/class/power_supply/*; do
+    [ "$(cat "$d/type" 2>/dev/null)" = Battery ] || continue
+    [ "$(cat "$d/scope" 2>/dev/null)" = Device ] && continue
+    echo "$d"; return 0
+  done
+  return 1
+}
+
+# Prints "<capacity%> <charge-or-energy> <voltage_uV> <charge|energy>".
+read_battery() {
+  local bat; bat=$(find_battery) || return 1
+  local cap chg volt kind=charge
+  cap=$(cat "$bat/capacity" 2>/dev/null) || return 1
+  if ! chg=$(cat "$bat/charge_now" 2>/dev/null); then
+    chg=$(cat "$bat/energy_now" 2>/dev/null) || return 1
+    kind=energy
+  fi
+  volt=$(cat "$bat/voltage_now" 2>/dev/null || echo 0)
+  echo "$cap $chg $volt $kind"
+}
+
+pre_ts=""; pre_cap=""; pre_chg=""; pre_volt=""; pre_kind=""
+
+on_pre() {
+  local r; r=$(read_battery) || { pre_ts=""; return; }
+  read -r pre_cap pre_chg pre_volt pre_kind <<<"$r"
+  pre_ts=$(date +%s)
+  logger -t battery-plus-sleep "pre-suspend: capacity=${pre_cap}%" 9>&-
+}
+
+on_post() {
+  [ -n "$pre_ts" ] || return
+  local r cap chg volt kind ts elapsed
+  r=$(read_battery) || { pre_ts=""; return; }
+  read -r cap chg volt kind <<<"$r"
+  ts=$(date +%s); elapsed=$(( ts - pre_ts ))
+  local p_cap=$pre_cap p_chg=$pre_chg p_volt=$pre_volt p_kind=$pre_kind
+  pre_ts=""
+  [ "$kind" = "$p_kind" ] || return
+  [ "$elapsed" -ge "$MIN_SEC" ] || return
+
+  # Charge is uAh: convert to Wh at the mean of pre/post voltage, standing in
+  # for sag under discharge. Energy is already uWh.
+  local line
+  line=$(awk -v kind="$kind" -v c0="$p_chg" -v c1="$chg" -v v0="$p_volt" -v v1="$volt" \
+             -v p0="$p_cap" -v p1="$cap" -v s="$elapsed" 'BEGIN{
+    if (kind == "charge") { v = (v0 + v1) / 2e6; w0 = c0 / 1e6 * v; w1 = c1 / 1e6 * v }
+    else                  { w0 = c0 / 1e6; w1 = c1 / 1e6 }
+    h = s / 3600; d = w0 - w1
+    printf "duration=%d pre_cap=%d post_cap=%d drop_wh=%.4f watts=%.3f pct_per_hour=%.3f",
+      s, p0, p1, d, (h > 0 ? d / h : 0), (h > 0 ? (p0 - p1) / h : 0)
+  }')
+  echo "$(date -Iseconds) $line" >> "$LOG"
+  logger -t battery-plus-sleep "post-resume: $line" 9>&-
+
+  if [ "$(wc -l < "$LOG")" -gt $(( LOG_KEEP * 2 )) ]; then
+    tail -n "$LOG_KEEP" "$LOG" > "$LOG.tmp" && mv -f -- "$LOG.tmp" "$LOG"
+  fi
+}
+
+# The inhibitor's child exits when this script does (tail --pid), so even a
+# SIGKILL can't leave a stray lock delaying every suspend.
+INH=""
+take_lock() {
+  [ -z "$INH" ] || return 0
+  [ "${BATTERY_PLUS_NO_INHIBIT:-}" = 1 ] && return 0
+  systemd-inhibit --what=sleep --mode=delay --who="Battery+" \
+    --why="Record battery level before sleep" \
+    tail --pid=$$ -f /dev/null 9>&- 2>/dev/null &
+  INH=$!
+}
+drop_lock() {
+  [ -n "$INH" ] || return 0
+  # Ending the child makes systemd-inhibit exit and release the lock.
+  pkill -P "$INH" -x tail 2>/dev/null || kill "$INH" 2>/dev/null
+  wait "$INH" 2>/dev/null
+  INH=""
+}
+
+MON=""
+cleanup() {
+  drop_lock
+  [ -z "$MON" ] || kill "$MON" 2>/dev/null
+  [ "$(cat "$PIDFILE" 2>/dev/null)" = "$$" ] && rm -f "$PIDFILE"
+}
+trap cleanup EXIT
+trap 'exit 0' TERM INT HUP
+
+if [ -n "${BATTERY_PLUS_SLEEP_EVENTS:-}" ]; then
+  exec 3< "$BATTERY_PLUS_SLEEP_EVENTS"
+else
+  # stdbuf: gdbus block-buffers into a pipe, which would hold events back.
+  # pdeathsig: the kernel ends the monitor if this script is killed outright.
+  exec 3< <(exec setpriv --pdeathsig TERM stdbuf -oL gdbus monitor --system --dest org.freedesktop.login1 \
+                --object-path /org/freedesktop/login1 9>&- 2>/dev/null)
+  MON=$!
+fi
+
+take_lock
+while IFS= read -r line <&3; do
+  case "$line" in
+    *".Manager.PrepareForSleep (true,)"*)  on_pre;  drop_lock ;;
+    *".Manager.PrepareForSleep (false,)"*) on_post; take_lock ;;
+  esac
+done
+# The monitor ended (e.g. the bus restarted). Exit non-zero; PowerService
+# starts a fresh watcher.
+exit 1
