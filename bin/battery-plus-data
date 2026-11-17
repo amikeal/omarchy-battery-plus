@@ -9,7 +9,13 @@ PATH=/usr/local/bin:/usr/bin:/bin
 
 # ---------- battery ----------------------------------------------------
 bat=""
-for d in /sys/class/power_supply/BAT*; do [ -d "$d" ] && bat="$d" && break; done
+# Match by type, not name: ACPI calls it BAT0, Apple SMC "macsmc-battery".
+# scope=Device marks a peripheral (mouse, phone), never the system battery.
+for d in /sys/class/power_supply/*; do
+  [ "$(cat "$d/type" 2>/dev/null)" = Battery ] || continue
+  [ "$(cat "$d/scope" 2>/dev/null)" = Device ] && continue
+  bat="$d"; break
+done
 g() { cat "$bat/$1" 2>/dev/null || echo "${2:-0}"; }
 
 bat_present=false; percent=0; status=Unknown
@@ -43,7 +49,11 @@ if [ -n "$bat" ]; then
 fi
 
 ac=0
-for a in /sys/class/power_supply/A{C,DP}*/online; do [ -r "$a" ] && ac=$(cat "$a") && break; done
+for a in /sys/class/power_supply/*; do
+  case "$(cat "$a/type" 2>/dev/null)" in Mains|USB) ;; *) continue ;; esac
+  [ "$(cat "$a/scope" 2>/dev/null)" = Device ] && continue
+  [ "$(cat "$a/online" 2>/dev/null)" = 1 ] && { ac=1; break; }
+done
 
 watts=$(awk -v p="$p_uw" 'BEGIN{printf "%.2f", p/1000000}')
 health=$(awk -v f="$wh_full" -v d="$wh_des" 'BEGIN{ if(d>0) printf "%.0f", f*100/d; else print 0 }')

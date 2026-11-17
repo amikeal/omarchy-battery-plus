@@ -19,7 +19,13 @@ _bg() { cat "$BAT_DIR/$1" 2>/dev/null || echo "${2:-0}"; }
 battery_probe() {
   BAT_DIR=""
   local d
-  for d in /sys/class/power_supply/BAT*; do [ -d "$d" ] && BAT_DIR="$d" && break; done
+  # Match by type, not name: ACPI calls it BAT0, Apple SMC "macsmc-battery".
+  # scope=Device marks a peripheral (mouse, phone), never the system battery.
+  for d in /sys/class/power_supply/*; do
+    [ "$(cat "$d/type" 2>/dev/null)" = Battery ] || continue
+    [ "$(cat "$d/scope" 2>/dev/null)" = Device ] && continue
+    BAT_DIR="$d"; break
+  done
   [ -n "$BAT_DIR" ] || return 1
 
   BAT_CAP=$(_bg capacity)
@@ -70,8 +76,10 @@ battery_probe() {
 
   AC_ONLINE=0
   local a
-  for a in /sys/class/power_supply/A{C,DP}*/online; do
-    [ -r "$a" ] && AC_ONLINE=$(cat "$a" 2>/dev/null) && break
+  for a in /sys/class/power_supply/*; do
+    case "$(cat "$a/type" 2>/dev/null)" in Mains|USB) ;; *) continue ;; esac
+    [ "$(cat "$a/scope" 2>/dev/null)" = Device ] && continue
+    [ "$(cat "$a/online" 2>/dev/null)" = 1 ] && { AC_ONLINE=1; break; }
   done
   return 0
 }

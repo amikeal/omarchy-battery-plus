@@ -95,10 +95,11 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.showPercentage && !vertical
-      ? (Model.batteryIcon(root.b.percent, root.b.status) + "  " + root.b.percent + "%")
-      : Model.batteryIcon(root.b.percent, root.b.status)
-    slotSize: Style.bar.iconSlot * (root.showPercentage && !vertical ? 2.3 : 1)
+    // BarIconButton fits `text` to a single icon canvas, so it must hold only
+    // the glyph; the percentage goes in `labelText`, drawn beside it.
+    text: Model.batteryIcon(root.b.percent, root.b.status)
+    labelText: root.showPercentage && !vertical ? root.b.percent + "%" : ""
+    slotSize: Style.bar.iconSlot * (root.showPercentage && !vertical ? 2 : 1)
     tooltipText: root.b.present
       ? ("Battery " + root.b.percent + "%  ·  " + Model.fmtWatts(root.b.watts)
          + (root.b.status === "Discharging" ? "  ·  " + Model.fmtDuration(root.b.minutes) + " left" : ""))
@@ -143,11 +144,14 @@ Panel {
         boundsBehavior: Flickable.StopAtBounds
         flickableDirection: Flickable.VerticalFlick
         interactive: contentHeight > height
-        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+        ScrollBar.vertical: ScrollBar { id: vbar; policy: ScrollBar.AsNeeded }
 
         Column {
           id: contentColumn
-          width: flick.width
+          // Leave a gutter for the scrollbar so it never sits on top of the
+          // right-aligned values. Keyed off `interactive` (content taller than
+          // the view), not vbar.visible, to avoid a width/height binding loop.
+          width: flick.width - (flick.interactive ? vbar.width + Style.space(6) : 0)
           spacing: Style.space(14)
 
           // ---------- Hero ----------
@@ -267,11 +271,13 @@ Panel {
                 ? Model.fmtDuration(root.b.minutes) : "—"
             }
             StatPair { label: "Draw"; value: Model.fmtWatts(root.b.watts) }
-            StatPair { label: "Health"; value: (root.b.health || 0) + "%" }
+            // Some drivers (Apple SMC) report no design capacity, so health is unknown.
+            StatPair { label: "Health"; value: root.b.health ? root.b.health + "%" : "—" }
             StatPair { label: "Cycles"; value: String(root.b.cycles || "—") }
             StatPair {
               label: "Capacity"
-              value: Number(root.b.whFull).toFixed(1) + "/" + Number(root.b.whDesign).toFixed(1) + " Wh"
+              value: Number(root.b.whFull).toFixed(1)
+                + (root.b.whDesign ? "/" + Number(root.b.whDesign).toFixed(1) : "") + " Wh"
             }
             StatPair {
               label: "Temp"
@@ -401,21 +407,31 @@ Panel {
               wrapMode: Text.WordWrap
             }
 
-            // Installed and measured.
-            Grid {
+            // Installed and measured. Duration/when fit a 2-up grid; the
+            // draw figures ("0.17 W · 0.33 %/h") need a full row each.
+            Column {
+              id: sleepStats
               width: parent.width
               visible: root.sleepData.installed && !!Model.sleepSummary(root.sleepData)
-              columns: 2
-              columnSpacing: Style.space(16)
-              rowSpacing: Style.spacing.sm
+              spacing: Style.spacing.sm
               readonly property var sum: Model.sleepSummary(root.sleepData) || ({})
 
-              StatPair { label: "Last sleep"; value: parent.sum.duration || "—" }
-              StatPair { label: "When"; value: parent.sum.ago || "—" }
-              StatPair { label: "Last draw"; value: (parent.sum.lastWatts || "—") + "  ·  " + (parent.sum.lastRate || "") }
+              Grid {
+                width: parent.width
+                columns: 2
+                columnSpacing: Style.space(16)
+                StatPair { label: "Last sleep"; value: sleepStats.sum.duration || "—" }
+                StatPair { label: "When"; value: sleepStats.sum.ago || "—" }
+              }
               StatPair {
-                label: "Avg (" + (parent.sum.samples || 0) + " sleeps)"
-                value: (parent.sum.avgWatts || "—") + "  ·  " + (parent.sum.avgRate || "")
+                wide: true
+                label: "Last sleep draw"
+                value: (sleepStats.sum.lastWatts || "—") + "  ·  " + (sleepStats.sum.lastRate || "")
+              }
+              StatPair {
+                wide: true
+                label: "Average (" + (sleepStats.sum.samples || 0) + " sleeps)"
+                value: (sleepStats.sum.avgWatts || "—") + "  ·  " + (sleepStats.sum.avgRate || "")
               }
             }
           }
@@ -713,9 +729,12 @@ Panel {
     id: sp
     property string label: ""
     property string value: ""
-    // Sized for a 2-up grid; works in any Grid parent that sets columnSpacing,
-    // not just the original "Stats" one.
-    width: parent ? (parent.width - (parent.columnSpacing || 0)) / 2 : implicitWidth
+    // `wide` spans the full parent width; otherwise sized for a 2-up grid in
+    // any Grid parent that sets columnSpacing.
+    property bool wide: false
+    width: !parent ? implicitWidth
+      : wide ? parent.width
+      : (parent.width - (parent.columnSpacing || 0)) / 2
     implicitHeight: Math.max(spLabel.implicitHeight, spValue.implicitHeight)
 
     Text {

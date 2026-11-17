@@ -13,7 +13,13 @@
 set -u
 
 BAT=""
-for d in /sys/class/power_supply/BAT*; do [ -d "$d" ] && BAT="$d" && break; done
+# Match by type, not name: ACPI calls it BAT0, Apple SMC "macsmc-battery".
+# scope=Device marks a peripheral (mouse, phone), never the system battery.
+for d in /sys/class/power_supply/*; do
+  [ "$(cat "$d/type" 2>/dev/null)" = Battery ] || continue
+  [ "$(cat "$d/scope" 2>/dev/null)" = Device ] && continue
+  BAT="$d"; break
+done
 
 LOG=/var/log/battery-plus-sleep.log
 STATE=/run/battery-plus-sleep.state
