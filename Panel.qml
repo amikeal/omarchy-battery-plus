@@ -163,6 +163,7 @@ Panel {
             fontFamily: root.fontFamily
             iconComponent: Component {
               Text {
+                textFormat: Text.PlainText
                 text: Model.batteryIcon(root.b.percent, root.b.status)
                 color: root.charging ? root.fg : (root.b.percent <= 10 ? root.urgent : root.fg)
                 font.family: root.fontFamily
@@ -172,6 +173,7 @@ Panel {
             }
             trailingControl: Component {
               Text {
+                textFormat: Text.PlainText
                 text: (root.b.percent || 0) + "%"
                 color: root.fg
                 font.family: root.fontFamily
@@ -231,6 +233,7 @@ Panel {
               spacing: Style.space(8)
 
               Text {
+                textFormat: Text.PlainText
                 width: parent.width
                 text: Model.WIFI_FIX_INFO.title
                 color: root.fg
@@ -239,6 +242,7 @@ Panel {
                 font.bold: true
               }
               Text {
+                textFormat: Text.PlainText
                 width: parent.width
                 text: Model.wifiFixBlurb(root.wifiFix) + " " + Model.WIFI_FIX_INFO.help
                 color: root.dim
@@ -301,6 +305,7 @@ Panel {
                 fontFamily: root.fontFamily
               }
               Text {
+                textFormat: Text.PlainText
                 anchors.right: parent.right
                 anchors.verticalCenter: sparkTitle.verticalCenter
                 text: service.rapl.available ? Model.raplLabel(service.rapl)
@@ -459,6 +464,7 @@ Panel {
               spacing: Style.space(8)
 
               Text {
+                textFormat: Text.PlainText
                 width: parent.width
                 text: "Power tuning isn’t set up yet"
                 color: root.fg
@@ -467,6 +473,7 @@ Panel {
                 font.bold: true
               }
               Text {
+                textFormat: Text.PlainText
                 width: parent.width
                 text: "Install TLP + the MacBook tunables to control power modes, CPU turbo, Wi-Fi and PCIe power saving from here."
                 color: root.dim
@@ -504,6 +511,7 @@ Panel {
               onPicked: function(v) { service.act("mode", v) }
             }
             Text {
+              textFormat: Text.PlainText
               width: parent.width
               text: root.tlp.active
                 ? "Auto follows the AC adapter · currently on " + (root.tlp.mode === "battery" ? "battery profile" : "AC profile")
@@ -541,6 +549,7 @@ Panel {
               onPicked: function(v) { service.act("epp", v) }
             }
             Text {
+              textFormat: Text.PlainText
               width: parent.width
               text: "Energy bias · governor " + root.cpu.governor
                 + (root.cpu.freqMHz ? " · " + root.cpu.freqMHz + " MHz" : "")
@@ -568,6 +577,7 @@ Panel {
                 fontFamily: root.fontFamily
               }
               Text {
+                textFormat: Text.PlainText
                 anchors.right: parent.right
                 anchors.verticalCenter: consumersTitle.verticalCenter
                 text: "CPU SHARE"
@@ -588,6 +598,7 @@ Panel {
 
                 Text {
                   id: procName
+                  textFormat: Text.PlainText
                   anchors.left: parent.left
                   anchors.verticalCenter: parent.verticalCenter
                   width: parent.width * 0.34
@@ -621,6 +632,7 @@ Panel {
 
                 Text {
                   id: procPct
+                  textFormat: Text.PlainText
                   anchors.right: parent.right
                   anchors.verticalCenter: parent.verticalCenter
                   width: Style.space(42)
@@ -634,6 +646,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               visible: (service.procs || []).length === 0
               width: parent.width
               text: "Gathering process data…"
@@ -678,6 +691,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               width: parent.width
               text: "Toggles apply immediately. “Keep after reboot” writes the setting into "
                   + "the TLP config so it survives a restart."
@@ -716,6 +730,7 @@ Panel {
           }
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             text: "R refresh · J/K scroll · Esc close"
             color: root.dim
@@ -744,6 +759,7 @@ Panel {
 
     Text {
       id: spLabel
+      textFormat: Text.PlainText
       anchors.left: parent.left
       anchors.verticalCenter: parent.verticalCenter
       text: sp.label
@@ -754,6 +770,7 @@ Panel {
     }
     Text {
       id: spValue
+      textFormat: Text.PlainText
       anchors.right: parent.right
       anchors.left: spLabel.right
       anchors.leftMargin: Style.space(6)
@@ -828,6 +845,7 @@ Panel {
         spacing: Style.space(1)
 
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           text: tw.title
           color: root.fg
@@ -837,6 +855,7 @@ Panel {
           elide: Text.ElideRight
         }
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           text: tw.blurb
           visible: text !== ""
@@ -890,6 +909,7 @@ Panel {
       spacing: Style.space(6)
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width - parent.leftPadding
         text: tw.help
         color: root.dim

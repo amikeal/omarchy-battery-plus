@@ -68,27 +68,18 @@ if [ "${p_uw:-0}" -gt 0 ]; then
   esac
 fi
 
-# ---------- RAPL (root-readable only after the udev rule) --------------
+# ---------- RAPL (CPU package power) ----------------------------------
+# The raw energy counters stay root-only (CVE-2020-8694); the privileged
+# helper hands back coarse watts instead. Background polls pass --no-rapl so
+# the helper (and sudo's log line for it) only runs while the panel is open.
+# Without the helper, the panel falls back to the battery's own draw.
 rapl_avail=false; rp_pkg=0; rp_core=0; rp_gpu=0
-if head -c1 /sys/class/powercap/intel-rapl:0/energy_uj >/dev/null 2>&1; then
-  declare -A E0
-  for dom in intel-rapl:0 intel-rapl:0:0 intel-rapl:0:1; do
-    [ -r "/sys/class/powercap/$dom/energy_uj" ] && E0[$dom]=$(cat "/sys/class/powercap/$dom/energy_uj")
-  done
-  if [ "${#E0[@]}" -gt 0 ]; then
-    sleep 0.4
-    for dom in intel-rapl:0 intel-rapl:0:0 intel-rapl:0:1; do
-      [ -n "${E0[$dom]:-}" ] || continue
-      e1=$(cat "/sys/class/powercap/$dom/energy_uj" 2>/dev/null || echo "${E0[$dom]}")
-      mx=$(cat "/sys/class/powercap/$dom/max_energy_range_uj" 2>/dev/null || echo 0)
-      w=$(awk -v a="${E0[$dom]}" -v b="$e1" -v m="$mx" 'BEGIN{d=b-a; if(d<0&&m>0)d+=m; printf "%.2f", d/1e6/0.4}')
-      case $dom in
-        intel-rapl:0)   rp_pkg=$w ;;
-        intel-rapl:0:0) rp_core=$w ;;
-        intel-rapl:0:1) rp_gpu=$w ;;
-      esac
-    done
-    rapl_avail=true
+if [ "${1:-}" != --no-rapl ] && [ -x /usr/local/bin/battery-plus-priv ] \
+   && r=$(sudo -n /usr/local/bin/battery-plus-priv rapl 2>/dev/null); then
+  read -r a b c _ <<<"$r"
+  w='^[0-9]+\.[0-9]$'
+  if [[ $a =~ $w && $b =~ $w && $c =~ $w ]]; then
+    rp_pkg=$a; rp_core=$b; rp_gpu=$c; rapl_avail=true
   fi
 fi
 

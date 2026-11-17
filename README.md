@@ -13,8 +13,9 @@ leaving the bar.
 - **Hero** — battery glyph, charge %, and live mode (`ON BATTERY · 9.6 W`).
 - **Charge bar** — animated; pulses while charging.
 - **Stats** — time remaining, draw, health, cycle count, capacity (Wh), temperature.
-- **Power draw** — a rolling sparkline of recent samples: Intel RAPL package
-  power when it's readable, otherwise the battery's own reported draw.
+- **Power draw** — a rolling sparkline of recent samples while the panel is
+  open: CPU package power (coarse, via the privileged helper) when the
+  power-tuning helper is installed, otherwise the battery's own reported draw.
 - **Power mode** — `Auto` / `Saver` / `Full power`, backed by TLP
   (`tlp start` / `tlp bat` / `tlp ac`).
 - **CPU** — turbo-boost toggle and an energy-preference (EPP) selector.
@@ -66,8 +67,10 @@ Remove with `omarchy plugin remove io.github.amikeal.battery-plus` (re-enable
 ```
 
 This installs `tlp` + `powertop`, masks `power-profiles-daemon`, writes a TLP
-drop-in, installs the privileged helper (below), and adds a udev rule so the
-panel can read Intel RAPL counters without root. `extras/power-tuning/revert.sh`
+drop-in, and installs the privileged helper (below), which also reports
+coarse CPU package power from the Intel RAPL counters. The counters themselves
+stay root-only, as the kernel ships them, because fine-grained readings are a
+known side channel (CVE-2020-8694). `extras/power-tuning/revert.sh`
 undoes it.
 
 > **The TLP drop-in (`tlp-macbookair.conf`) is tuned for the Intel
@@ -128,8 +131,14 @@ The Power-mode, CPU, and device toggles need root. The installer copies
 root) and whitelists exactly that path in `/etc/sudoers.d/battery-plus`, so
 the panel invokes it through `sudo -n` with no prompt. Every branch of that
 helper is a fixed operation on a fixed sysfs path or a whitelisted TLP key —
-no argument is executed or used to build a path. Without the helper the panel
-falls back to a `pkexec` prompt per action.
+no argument is executed or used to build a path. Its one read-only branch,
+`rapl`, returns CPU power averaged over 0.4 s and rounded to 0.1 W, and is
+only called while the panel is open. Without the helper the panel falls back
+to a `pkexec` prompt per action and shows battery draw instead of CPU power.
+
+**Upgrading from an earlier version:** re-run `extras/power-tuning/apply.sh`.
+It redeploys the helper and removes the old `99-rapl-readable.rules` udev rule,
+which made the raw energy counters readable by every process you run.
 
 Nothing else is passwordless — `tlp`, `tlp-stat`, and `powertop` are not in
 the sudoers file, deliberately. Running them by hand still prompts for your

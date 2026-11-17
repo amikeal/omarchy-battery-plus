@@ -20,7 +20,9 @@ This will:
   • add       /etc/sudoers.d/battery-plus   (passwordless: battery-plus-priv ONLY —
                 its own allowlist covers every action the panel performs; running
                 tlp/tlp-stat/powertop by hand still prompts for your password)
-  • add       /etc/udev/rules.d/99-rapl-readable.rules  (RAPL stats without root)
+  • remove    /etc/udev/rules.d/99-rapl-readable.rules if an earlier version
+                added it (CPU energy counters stay root-only; the helper above
+                reports coarse CPU watts to the panel instead)
   • restart   the Omarchy shell
 
 thermald is left running. Undo anytime with ./revert.sh
@@ -103,18 +105,19 @@ else
   echo "    (battery-plus-priv not installed — skipping; tuning toggles will use pkexec prompts)"
 fi
 
-echo "==> RAPL readable by group wheel"
-# install -o/-g asserts ownership explicitly, unlike tee (which, like touch,
-# leaves an already-existing file's ownership untouched — see the sleep-
-# tracking log fix for why that matters).
-printf '%s\n' \
-  'SUBSYSTEM=="powercap", ACTION=="add", RUN+="/bin/chgrp wheel /sys%p/energy_uj", RUN+="/bin/chmod g+r /sys%p/energy_uj"' \
-  | sudo install -Dm644 -o root -g root /dev/stdin /etc/udev/rules.d/99-rapl-readable.rules
-sudo udevadm control --reload
-sudo udevadm trigger --subsystem-match=powercap || true
-# apply to the already-registered domains right now
-for d in /sys/class/powercap/intel-rapl:*/energy_uj; do
-  [ -e "$d" ] && sudo chgrp wheel "$d" && sudo chmod g+r "$d"
+echo "==> RAPL counters root-only"
+# Earlier versions made energy_uj group-readable so the panel could sample
+# it directly. That reopened the PLATYPUS power side channel
+# (CVE-2020-8694/8695) to every process the user runs; the kernel made these
+# counters root-only on purpose. The panel now asks battery-plus-priv for
+# coarse watts instead. Undo the old rule and restore the kernel default.
+if [ -e /etc/udev/rules.d/99-rapl-readable.rules ]; then
+  sudo rm -f /etc/udev/rules.d/99-rapl-readable.rules
+  sudo udevadm control --reload
+  echo "    removed the old 99-rapl-readable.rules"
+fi
+for d in /sys/class/powercap/intel-rapl*/energy_uj; do
+  [ -e "$d" ] && sudo chgrp root "$d" && sudo chmod 0400 "$d"
 done
 
 echo "==> restart shell"

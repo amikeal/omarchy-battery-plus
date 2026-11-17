@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Omarchy — battery & power dashboard (interactive TUI).
 # Launched from the battery-plus bar widget. Shows live battery health,
-# real-time power draw (Intel RAPL), CPU power policy, TLP state, and the
+# power draw (Intel RAPL, coarse), CPU power policy, TLP state, and the
 # top software power consumers (PowerTOP). Offers one-key tuning.
 set -uo pipefail
 export LC_ALL=C
@@ -17,33 +17,18 @@ hdr()   { [ -n "$G" ] && gum style --bold --foreground 4 --margin "1 0 0 0" "$1"
 note()  { [ -n "$G" ] && gum style --foreground 3 "$1" || printf '%s\n' "$1"; }
 kv()    { printf '  %-15s %s\n' "$1" "$2"; }
 
-# ── live RAPL sample: package / core / gpu-uncore, 1-second window ──────
+# ── live RAPL sample: package / core / gpu-uncore ─────────────────────
+# The raw counters stay root-only (CVE-2020-8694); the privileged helper
+# returns coarse watts. A cached sudo or the passwordless helper both work.
 rapl_sample() {
-  local doms=(intel-rapl:0 intel-rapl:0:0 intel-rapl:0:1)
-  local -A a
-  local dom cat_cmd=cat
-  # RAPL energy_uj is root-only by default (CVE-2020-8694). Use sudo -n if
-  # a udev rule has not opened it up; skip cleanly if neither works.
-  if ! head -c1 /sys/class/powercap/intel-rapl:0/energy_uj >/dev/null 2>&1; then
-    if sudo -n true 2>/dev/null; then cat_cmd="sudo cat"; else
-      echo "  (needs root — add the udev rule from the tuning script, or run a menu action)"
-      return
-    fi
+  local r pkg core gpu
+  if [ ! -x /usr/local/bin/battery-plus-priv ] \
+     || ! r=$(sudo -n /usr/local/bin/battery-plus-priv rapl 2>/dev/null); then
+    echo "  (needs the Battery+ power-tuning helper — see extras/power-tuning)"
+    return
   fi
-  for dom in "${doms[@]}"; do
-    $cat_cmd "/sys/class/powercap/$dom/energy_uj" >/dev/null 2>&1 && a[$dom]=$($cat_cmd "/sys/class/powercap/$dom/energy_uj" 2>/dev/null)
-  done
-  [ ${#a[@]} -gt 0 ] || { echo "  (RAPL not available on this machine)"; return; }
-  sleep 1
-  for dom in "${doms[@]}"; do
-    [ -n "${a[$dom]:-}" ] || continue
-    local now max name
-    now=$($cat_cmd "/sys/class/powercap/$dom/energy_uj" 2>/dev/null || echo "${a[$dom]}")
-    max=$(cat "/sys/class/powercap/$dom/max_energy_range_uj" 2>/dev/null || echo 0)
-    name=$(cat "/sys/class/powercap/$dom/name" 2>/dev/null || echo "$dom")
-    awk -v x="${a[$dom]}" -v y="$now" -v m="$max" -v n="$name" \
-      'BEGIN{d=y-x; if(d<0&&m>0)d+=m; printf "  %-15s %.2f W\n", n, d/1e6}'
-  done
+  read -r pkg core gpu <<<"$r"
+  printf "  %-15s %s W\n" package "$pkg" core "$core" uncore "$gpu"
 }
 
 cpu_pkg_temp() {
@@ -84,7 +69,7 @@ show_status() {
     echo "  No battery device found."
   fi
 
-  hdr "Live power draw  (Intel RAPL, 1 s)"
+  hdr "Live power draw  (Intel RAPL)"
   rapl_sample
 
   hdr "CPU power policy"
@@ -115,9 +100,18 @@ show_status() {
 
 powertop_scan() {
   command -v powertop >/dev/null 2>&1 || { note "PowerTOP is not installed."; sleep 2; return; }
-  local secs=15 tmp; tmp=$(mktemp --suffix=.csv)
+  local secs=15 rootdir report
   note "Running PowerTOP for ${secs}s (needs sudo)…"
-  sudo powertop --csv="$tmp" --time="$secs" >/dev/null 2>&1 || { note "powertop failed"; sleep 2; return; }
+  # Root writes the report into a directory root created (0700), never into
+  # a path the user owns, so nothing running as the user can redirect the
+  # write. The report is read back through sudo and copied out afterwards.
+  rootdir=$(sudo mktemp -d) || { note "sudo failed"; sleep 2; return; }
+  if ! sudo powertop --csv="$rootdir/powertop.csv" --time="$secs" >/dev/null 2>&1; then
+    sudo rm -rf -- "$rootdir"; note "powertop failed"; sleep 2; return
+  fi
+  report=$(mktemp --suffix=.csv)
+  sudo cat -- "$rootdir/powertop.csv" > "$report"
+  sudo rm -rf -- "$rootdir"
   hdr "Top software power consumers"
   awk -F';' '
     /Overview of Software Power Consumers/ {g=1; next}
@@ -127,9 +121,9 @@ powertop_scan() {
       if ($1 ~ /^Usage$/ || $1=="") next
       desc=$(NF-1); if (desc=="") desc=$(NF)
       printf "  %-32s  %10s  %8s wake/s  %s\n", substr(desc,1,32), $1, $2, $NF
-    }' "$tmp" | head -18
+    }' "$report" | head -18
   echo
-  note "Full report: $tmp"
+  note "Full report: $report"
   read -rp "  Enter to return… "
 }
 

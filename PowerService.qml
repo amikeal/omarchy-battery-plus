@@ -28,6 +28,10 @@ Item {
   property var history: []
   property int historyMax: 64
   property bool busy: actionProc.running
+  // RAPL readings come only from panel-open polls (see refresh()). Once any
+  // have arrived, background samples (battery draw) stay out of the
+  // sparkline so it never mixes two different measurements.
+  property bool raplSeen: false
 
   readonly property var battery: snapshot.battery
   readonly property var rapl: snapshot.rapl
@@ -47,19 +51,27 @@ Item {
     if (parsed.top && !parsed.procs) parsed.procs = parsed.top
     root.snapshot = parsed
 
-    var w = parsed.rapl && parsed.rapl.available && Number(parsed.rapl.package) > 0
-      ? Number(parsed.rapl.package)
-      : Number(parsed.battery.watts) || 0
-    var next = root.history.slice()
-    next.push(w)
-    while (next.length > root.historyMax) next.shift()
-    root.history = next
+    var hasRapl = !!(parsed.rapl && parsed.rapl.available)
+    if (hasRapl) root.raplSeen = true
+    if (hasRapl || !root.raplSeen) {
+      var w = hasRapl && Number(parsed.rapl.package) > 0
+        ? Number(parsed.rapl.package)
+        : Number(parsed.battery.watts) || 0
+      var next = root.history.slice()
+      next.push(w)
+      while (next.length > root.historyMax) next.shift()
+      root.history = next
+    }
     root.updated()
   }
 
   function refresh() {
     if (pollProc.running) return
-    pollProc.command = [root.binDir + "/battery-plus-data"]
+    // RAPL goes through the root helper; only ask for it while the panel
+    // is open, so the slow background tick never touches sudo.
+    pollProc.command = root.live
+      ? [root.binDir + "/battery-plus-data"]
+      : [root.binDir + "/battery-plus-data", "--no-rapl"]
     pollProc.running = true
   }
 

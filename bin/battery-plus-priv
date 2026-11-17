@@ -2,8 +2,9 @@
 # Battery+ — privileged actions. power-tuning/apply.sh installs a copy of
 # this file to /usr/local/bin/battery-plus-priv (root:root, 0755) and
 # whitelists THAT path in /etc/sudoers.d/battery-plus. Every branch is a
-# fixed operation on a fixed sysfs path; no caller-supplied string is ever
-# executed or used to build a path.
+# fixed operation on a fixed sysfs path; arguments are checked against fixed
+# lists and no caller-supplied string is ever executed or used to build a
+# path. The one read-only branch (rapl) returns only coarse wattage.
 set -euo pipefail
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -39,10 +40,48 @@ upsert() { # file KEY value
   fi
 }
 
+# Validated lookup: exits 2 on anything that isn't a known tweak. (Feeding
+# `read` from "$(tlp_key ...)" can't do this: the lookup's failure never
+# reaches read, which would carry on with an empty key.)
+tweak() {
+  local kv
+  kv=$(tlp_key "${1:-}") || { echo "bad tweak" >&2; exit 2; }
+  read -r key onv offv <<<"$kv"
+}
+
 case "${1:-}" in
   tlp-auto) exec tlp start ;;
   tlp-bat)  exec tlp bat ;;
   tlp-ac)   exec tlp ac ;;
+
+  rapl)
+    # Coarse CPU package / core / uncore power for the panel, as three
+    # numbers in watts: averaged over 0.4 s and rounded to 0.1 W. The raw
+    # energy_uj counters stay root-only, the kernel default since the
+    # PLATYPUS power side channel (CVE-2020-8694/8695), which needs
+    # fine-grained readings at a high rate. The lock stops overlapping
+    # calls from being combined into finer windows.
+    exec 8>/run/battery-plus-rapl.lock
+    flock 8
+    doms=(intel-rapl:0 intel-rapl:0:0 intel-rapl:0:1)
+    declare -A e0
+    for d in "${doms[@]}"; do
+      f=/sys/class/powercap/$d/energy_uj
+      [ -r "$f" ] && e0[$d]=$(cat "$f")
+    done
+    [ "${#e0[@]}" -gt 0 ] || { echo "no rapl" >&2; exit 1; }
+    sleep 0.4
+    out=()
+    for d in "${doms[@]}"; do
+      if [ -z "${e0[$d]:-}" ]; then out+=(0.0); continue; fi
+      e1=$(cat "/sys/class/powercap/$d/energy_uj")
+      mx=$(cat "/sys/class/powercap/$d/max_energy_range_uj" 2>/dev/null || echo 0)
+      out+=("$(awk -v a="${e0[$d]}" -v b="$e1" -v m="$mx" \
+        'BEGIN{d=b-a; if(d<0&&m>0)d+=m; printf "%.1f", d/1e6/0.4}')")
+    done
+    echo "${out[*]}"
+    exit 0
+    ;;
 
   turbo)
     want "${2:-}"
@@ -93,15 +132,15 @@ case "${1:-}" in
 
   persist)
     # persist <tweak> <on|off>: write the pinned value and re-apply TLP
+    tweak "${2:-}"
     want "${3:-}"
-    read -r key onv offv <<<"$(tlp_key "${2:-}")" || { echo "bad tweak" >&2; exit 2; }
-    [ "$3" = on ] && upsert "$PERSIST" "$key" "$onv" || upsert "$PERSIST" "$key" "$offv"
+    if [ "$3" = on ]; then upsert "$PERSIST" "$key" "$onv"; else upsert "$PERSIST" "$key" "$offv"; fi
     tlp start >/dev/null 2>&1 || true
     ;;
 
   unpersist)
     # unpersist <tweak>: drop the pinned line, back to TLP defaults
-    read -r key _ _ <<<"$(tlp_key "${2:-}")" || { echo "bad tweak" >&2; exit 2; }
+    tweak "${2:-}"
     [ -f "$PERSIST" ] && sed -i "/^$key=/d" "$PERSIST"
     # if nothing but the header remains, remove the file
     [ -f "$PERSIST" ] && ! grep -qE '^[A-Z]' "$PERSIST" && rm -f "$PERSIST"

@@ -10,8 +10,13 @@ sudo systemctl disable --now tlp.service 2>/dev/null || true
 sudo rm -f /etc/tlp.d/01-omarchy-macbookair.conf
 sudo rm -f /etc/sudoers.d/battery-plus
 sudo rm -f /usr/local/bin/battery-plus-priv
+# Rule from versions before RAPL went through the helper; restore the kernel's
+# root-only default on the counters it opened up.
 sudo rm -f /etc/udev/rules.d/99-rapl-readable.rules
 sudo udevadm control --reload || true
+for d in /sys/class/powercap/intel-rapl*/energy_uj; do
+  [ -e "$d" ] && sudo chgrp root "$d" && sudo chmod 0400 "$d"
+done
 
 sudo systemctl unmask power-profiles-daemon.service 2>/dev/null || true
 sudo systemctl enable --now power-profiles-daemon.service 2>/dev/null || true
