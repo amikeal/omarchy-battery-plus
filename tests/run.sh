@@ -83,6 +83,57 @@ else
   echo "  skip  installed helper rapl output (helper not installed or no RAPL)"
 fi
 
+echo "Power-tuning install / revert"
+# Stub sudo/systemctl/udevadm on PATH: sudo only logs what it was asked to
+# run (and fails on request), so nothing here touches the real system.
+STUB="$TMP/stub"; mkdir -p "$STUB"
+cat > "$STUB/sudo" <<'EOF'
+#!/bin/bash
+echo "$*" >> "$SUDO_LOG"
+[ -n "${SUDO_FAIL:-}" ] && [[ "$*" == *"$SUDO_FAIL"* ]] && exit 1
+exit 0
+EOF
+cat > "$STUB/systemctl" <<'EOF'
+#!/bin/bash
+case $1 in list-unit-files) echo "$3 enabled enabled" ;; is-enabled) echo enabled ;; esac
+EOF
+printf '#!/bin/bash\nexit 0\n' > "$STUB/udevadm"
+chmod +x "$STUB"/*
+export SUDO_LOG="$TMP/sudo.log"
+
+# Finding: with no bundled helper, apply.sh used to skip the install but
+# still grant NOPASSWD to whatever already sat in /usr/local/bin.
+mkdir -p "$TMP/nohelper/extras/power-tuning"
+cp "$ROOT/extras/power-tuning/apply.sh" "$TMP/nohelper/extras/power-tuning/"
+: > "$SUDO_LOG"
+echo y | PATH="$STUB:$PATH" bash "$TMP/nohelper/extras/power-tuning/apply.sh" >/dev/null 2>&1
+check "apply.sh without the bundled helper exits non-zero" [ $? != 0 ]
+check "...before running anything as root" [ ! -s "$SUDO_LOG" ]
+ap="$ROOT/extras/power-tuning/apply.sh"
+verify=$(grep -n 'sha256sum "$dest"' "$ap" | tail -1 | cut -d: -f1)
+visudo=$(grep -n 'visudo -cf' "$ap" | cut -d: -f1)
+check "sudoers rule is written only after the installed helper is verified" \
+  [ -n "$verify" ] && [ -n "$visudo" ] && [ "$verify" -lt "$visudo" ]
+check "apply.sh no longer has a branch that trusts an existing helper" \
+  bash -c '! grep -q "if \[ -f /usr/local/bin/battery-plus-priv \]" "$1"' _ "$ap"
+
+# Finding: revert.sh used to swallow failures and still say "Reverted".
+rv="$ROOT/extras/power-tuning/revert.sh"
+check "revert.sh has no '|| true'" bash -c '! grep -q "|| true" "$1"' _ "$rv"
+: > "$SUDO_LOG"
+out=$(echo y | PATH="$STUB:$PATH" SUDO_FAIL="sudoers.d" bash "$rv" 2>&1); rc=$?
+check "revert.sh exits non-zero when a step fails" [ "$rc" != 0 ]
+check "...names the failed step and doesn't claim success" \
+  bash -c '[[ $1 == *"FAIL  remove /etc/sudoers.d/battery-plus"* && $1 != *"Reverted."* ]]' _ "$out"
+check "...still runs the steps after the failure" grep -q 'rm -f /usr/local/bin/battery-plus-priv' "$SUDO_LOG"
+check "...and keeps the state record for a re-run" bash -c '! grep -q "rm -rf -- /var/lib" "$1"' _ "$SUDO_LOG"
+: > "$SUDO_LOG"
+out=$(echo y | PATH="$STUB:$PATH" bash "$rv" 2>&1); rc=$?
+check "revert.sh with every step succeeding reports success" \
+  bash -c '[ "$1" = 0 ] && [[ $2 == *"Reverted."* ]]' _ "$rc" "$out"
+check "revert.sh removes the helper's 02-battery-plus.conf drop-in" \
+  grep -q 'rm -f /etc/tlp.d/02-battery-plus.conf' "$SUDO_LOG"
+
 echo "Root-written files"
 check "PowerTOP report is written into a root-created directory" \
   grep -q 'sudo powertop --csv="$rootdir/powertop.csv"' "$ROOT/extras/battery-dashboard"

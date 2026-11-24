@@ -70,8 +70,17 @@ This installs `tlp` + `powertop`, masks `power-profiles-daemon`, writes a TLP
 drop-in, and installs the privileged helper (below), which also reports
 coarse CPU package power from the Intel RAPL counters. The counters themselves
 stay root-only, as the kernel ships them, because fine-grained readings are a
-known side channel (CVE-2020-8694). `extras/power-tuning/revert.sh`
-undoes it.
+known side channel (CVE-2020-8694). It refuses to grant the helper
+passwordless `sudo` unless it has just installed the bundled copy and checked
+that the installed file matches it.
+
+Before changing anything, `apply.sh` records your existing TLP drop-in and
+the `tlp` / `power-profiles-daemon` service states in
+`/var/lib/battery-plus/power-tuning/`. `extras/power-tuning/revert.sh` puts
+them back as they were, and reports any step that fails instead of claiming
+success. If you installed with a version older than this, nothing was
+recorded, so revert falls back to Omarchy's defaults (TLP off,
+`power-profiles-daemon` on).
 
 > **The TLP drop-in (`tlp-macbookair.conf`) is tuned for the Intel
 > MacBook Air (9,1 / T2)** — Wi-Fi powersave on battery, PCIe ASPM, no CPU

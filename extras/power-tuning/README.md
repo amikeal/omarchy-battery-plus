@@ -6,7 +6,7 @@
 |------|---------|
 | `tlp-macbookair.conf` | TLP drop-in, installed to `/etc/tlp.d/01-omarchy-macbookair.conf` |
 | `apply.sh` | Install TLP + PowerTOP, apply the tuning, wire up the widget |
-| `revert.sh` | Undo `apply.sh`, restore `power-profiles-daemon` |
+| `revert.sh` | Undo `apply.sh`: restore the TLP drop-in and service states it recorded |
 
 The bar widget is separate, in `~/.config/omarchy/bar/scripts/`:
 `battery-plus` (bar JSON), `battery-dashboard` (TUI), `battery-common.sh`,
@@ -66,3 +66,11 @@ powertop              # interactive; Tab to "Tunables" / "Overview"
 ```bash
 bash ~/.config/omarchy/power-tuning/revert.sh
 ```
+
+`apply.sh` saves what it found (any existing
+`/etc/tlp.d/01-omarchy-macbookair.conf`, and whether `tlp` and
+`power-profiles-daemon` were enabled, masked or running) to
+`/var/lib/battery-plus/power-tuning/` on its first run, and `revert.sh`
+restores exactly that. Installs from older versions have no record, so revert
+uses Omarchy's defaults instead. If any step fails, revert lists it, exits
+non-zero, and keeps the record so you can re-run it.
